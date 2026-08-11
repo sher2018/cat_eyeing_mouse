@@ -1,5 +1,5 @@
 // path: src/adapter/i18n-service.js
-// M-03 I18nService —— WebExtension i18n 封装（DDS §4，绑定 /src/_locales）。
+// M-03 I18nService —— WebExtension i18n 封装（DDS §4，绑定根目录 /_locales）。
 // 语言包加载由原生 getMessage 接管，本模块只做封装 + 缺失回退 + 语言映射。
 // 所有方法永不抛异常；key 缺失返回 key 本身并记 WARN。
 
