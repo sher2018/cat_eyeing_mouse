@@ -1,0 +1,27 @@
+{
+  "name": "cat_eyeing_mouse",
+  "version": "1.0.0",
+  "description": "[toc]",
+  "main": "process_images.js",
+  "directories": {
+    "doc": "doc"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/sher2018/cat_eyeing_mouse.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/sher2018/cat_eyeing_mouse/issues"
+  },
+  "homepage": "https://github.com/sher2018/cat_eyeing_mouse#readme",
+  "dependencies": {
+    "sharp": "^0.35.3"
+  }
+}
