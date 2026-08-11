@@ -1,0 +1,34 @@
+.move-sprite {
+    width: 128px;
+    height: 128px;
+    background-image: url("move_sprite.png");
+    background-repeat: no-repeat;
+    display: inline-block;
+}
+
+.move-sprite-0 { background-position: 0 0; }
+.move-sprite-1 { background-position: -128px 0; }
+.move-sprite-2 { background-position: -256px 0; }
+.move-sprite-3 { background-position: 0 -128px; }
+.move-sprite-4 { background-position: -128px -128px; }
+.move-sprite-5 { background-position: -256px -128px; }
+.move-sprite-6 { background-position: 0 -256px; }
+.move-sprite-7 { background-position: -128px -256px; }
+.move-sprite-8 { background-position: -256px -256px; }
+
+.move-sprite-animated {
+    animation: move-play 0.9s steps(9) infinite;
+}
+
+@keyframes move-play {
+    0% { background-position: 0 0; }
+    11.11% { background-position: -128px 0; }
+    22.22% { background-position: -256px 0; }
+    33.33% { background-position: 0 -128px; }
+    44.44% { background-position: -128px -128px; }
+    55.56% { background-position: -256px -128px; }
+    66.67% { background-position: 0 -256px; }
+    77.78% { background-position: -128px -256px; }
+    88.89% { background-position: -256px -256px; }
+    100% { background-position: 0 0; }
+}

@@ -1,0 +1,30 @@
+{
+  "app_name": {
+    "message": "Cat Eyeing Mouse",
+    "description": "Extension display name shown in the toolbar and popup title."
+  },
+  "app_description": {
+    "message": "A cute cat follows your cursor and reacts to its movement.",
+    "description": "Short extension description shown on the extensions management page."
+  },
+  "action_show": {
+    "message": "Show",
+    "description": "Label for the show button when the cat is hidden."
+  },
+  "action_hide": {
+    "message": "Hide",
+    "description": "Label for the hide button when the cat is visible."
+  },
+  "action_clamp_viewport": {
+    "message": "Clamp to viewport",
+    "description": "Label for the toggle that keeps the cat inside the viewport."
+  },
+  "tip_drag_to_move": {
+    "message": "Drag to move",
+    "description": "Hint telling the user they can drag the cat."
+  },
+  "status_resting": {
+    "message": "Resting",
+    "description": "Status text shown when the cat enters its idle resting pose."
+  }
+}

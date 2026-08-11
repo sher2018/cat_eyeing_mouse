@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Cat Eyeing Mouse</title>
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <div class="cem-popup" role="dialog" aria-labelledby="popup-title">
+      <header class="cem-popup__header">
+        <span class="cem-popup__icon" aria-hidden="true"></span>
+        <h1 id="popup-title" class="cem-popup__title" data-i18n-key="app_name">Cat Eyeing Mouse</h1>
+      </header>
+
+      <main class="cem-popup__body">
+        <button
+          id="btn-toggle"
+          class="cem-btn cem-btn--primary"
+          type="button"
+          data-i18n-key="action_show"
+        >
+          Show
+        </button>
+
+        <label class="cem-switch">
+          <input id="btn-clamp" type="checkbox" />
+          <span class="cem-switch__label" data-i18n-key="action_clamp_viewport">Clamp to viewport</span>
+        </label>
+
+        <p class="cem-popup__tip" data-i18n-key="tip_drag_to_move">Drag to move</p>
+      </main>
+    </div>
+
+    <script type="module" src="popup.js"></script>
+  </body>
+</html>

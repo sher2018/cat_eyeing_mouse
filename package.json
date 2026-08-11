@@ -1,27 +1,14 @@
 {
-  "name": "cat_eyeing_mouse",
+  "name": "cat-eyeing-mouse",
   "version": "1.0.0",
-  "description": "[toc]",
-  "main": "process_images.js",
-  "directories": {
-    "doc": "doc"
-  },
+  "private": true,
+  "description": "Cat Eyeing Mouse 浏览器扩展（纯原生 JS，仅单元测试需要 Node.js）",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/sher2018/cat_eyeing_mouse.git"
-  },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
-  "type": "commonjs",
-  "bugs": {
-    "url": "https://github.com/sher2018/cat_eyeing_mouse/issues"
-  },
-  "homepage": "https://github.com/sher2018/cat_eyeing_mouse#readme",
-  "dependencies": {
-    "sharp": "^0.35.3"
+  "devDependencies": {
+    "vitest": "^3.0.0",
+    "jsdom": "^25.0.0"
   }
 }

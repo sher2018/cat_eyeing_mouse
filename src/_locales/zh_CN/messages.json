@@ -1,0 +1,30 @@
+{
+  "app_name": {
+    "message": "猫咪盯鼠标",
+    "description": "扩展在工具栏与 Popup 标题中显示的名称。"
+  },
+  "app_description": {
+    "message": "一只可爱的小猫会追随你的鼠标并对移动做出反应。",
+    "description": "显示在扩展管理页面的简短描述。"
+  },
+  "action_show": {
+    "message": "显示",
+    "description": "猫咪隐藏时显示按钮的文字。"
+  },
+  "action_hide": {
+    "message": "隐藏",
+    "description": "猫咪可见时隐藏按钮的文字。"
+  },
+  "action_clamp_viewport": {
+    "message": "边界约束",
+    "description": "控制是否将猫咪限制在视口内的开关文字。"
+  },
+  "tip_drag_to_move": {
+    "message": "拖动移动",
+    "description": "提示用户可以拖动猫咪的说明文字。"
+  },
+  "status_resting": {
+    "message": "休息中",
+    "description": "猫咪进入空闲休息姿态时显示的状态文字。"
+  }
+}

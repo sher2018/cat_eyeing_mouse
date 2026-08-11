@@ -1,0 +1,120 @@
+/* path: src/popup/popup.css */
+/* M-14 PopupView 样式（DDS §15）。简洁、与 /res 静态资源解耦。 */
+
+:root {
+  --cem-bg: #ffffff;
+  --cem-fg: #1f2933;
+  --cem-muted: #6b7280;
+  --cem-accent: #f59e0b;
+  --cem-accent-fg: #ffffff;
+  --cem-border: #e5e7eb;
+  --cem-radius: 8px;
+  --cem-gap: 12px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  width: 240px;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  background: var(--cem-bg);
+  color: var(--cem-fg);
+}
+
+.cem-popup {
+  padding: var(--cem-gap);
+  display: flex;
+  flex-direction: column;
+  gap: var(--cem-gap);
+}
+
+.cem-popup__header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.cem-popup__icon {
+  width: 32px;
+  height: 32px;
+  flex: 0 0 32px;
+  background: url("../../res/icons/icon48.png") center / contain no-repeat;
+}
+
+.cem-popup__title {
+  font-size: 15px;
+  font-weight: 600;
+  margin: 0;
+}
+
+.cem-popup__body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--cem-gap);
+}
+
+.cem-btn {
+  appearance: none;
+  border: 1px solid var(--cem-border);
+  background: var(--cem-bg);
+  color: var(--cem-fg);
+  padding: 8px 12px;
+  border-radius: var(--cem-radius);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.cem-btn:hover {
+  border-color: var(--cem-accent);
+}
+
+.cem-btn--primary {
+  background: var(--cem-accent);
+  color: var(--cem-accent-fg);
+  border-color: var(--cem-accent);
+}
+
+.cem-btn--primary:hover {
+  filter: brightness(1.05);
+}
+
+.cem-btn[disabled] {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.cem-switch {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--cem-fg);
+  cursor: pointer;
+}
+
+.cem-switch input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--cem-accent);
+  cursor: pointer;
+}
+
+.cem-switch__label {
+  user-select: none;
+}
+
+.cem-popup__tip {
+  margin: 0;
+  font-size: 12px;
+  color: var(--cem-muted);
+}
