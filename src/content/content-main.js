@@ -46,7 +46,7 @@ function createApp() {
     const poseMachine = overlay.getPoseMachine();
     const canvasStage = overlay.getCanvasStage();
     if (!poseMachine || !canvasStage) return;
-    renderer = createCanvasTransitionRenderer({ canvasStage, resourceLoader, mode: 'crossfade' });
+    renderer = createCanvasTransitionRenderer({ canvasStage, resourceLoader, mode: 'css' });
     poseMachine.onPoseChange((sector) => {
       if (renderer) renderer.playTo(sector);
     });
@@ -74,15 +74,18 @@ function createApp() {
     unbindMouseReenter = () => document.removeEventListener('mouseenter', onReenter);
   }
 
-  // 空闲态：进入休息态渲染 sit_back 帧；唤醒恢复当前姿态帧（FR-008）。
+  // 空闲态：切到 Canvas 模式渲染 sit_back 帧；唤醒切回 CSS sprite 模式恢复当前姿态（FR-008）。
   idle.onIdle(() => {
     const pm = overlay.getPoseMachine();
     if (pm && typeof pm.enterResting === 'function') pm.enterResting();
     const cs = overlay.getCanvasStage();
-    if (cs && typeof resourceLoader.getRest === 'function') {
-      const result = resourceLoader.getRest();
-      if (result && result.ok && result.value) {
-        try { cs.drawImage(result.value); } catch (_) { /* 渲染失败忽略 */ }
+    if (cs) {
+      if (typeof cs.showCanvas === 'function') cs.showCanvas();
+      if (typeof resourceLoader.getRest === 'function') {
+        const result = resourceLoader.getRest();
+        if (result && result.ok && result.value) {
+          try { cs.drawImage(result.value); } catch (_) { /* 渲染失败忽略 */ }
+        }
       }
     }
   });
@@ -90,11 +93,10 @@ function createApp() {
     const pm = overlay.getPoseMachine();
     if (pm && typeof pm.exitResting === 'function') pm.exitResting();
     const cs = overlay.getCanvasStage();
-    if (cs && pm && typeof pm.current === 'function') {
-      const sector = pm.current();
-      const result = resourceLoader.get(sector);
-      if (result && result.ok && result.value) {
-        try { cs.drawImage(result.value); } catch (_) { /* 渲染失败忽略 */ }
+    if (cs) {
+      if (typeof cs.showSprite === 'function') cs.showSprite();
+      if (pm && typeof pm.current === 'function' && typeof cs.setSpriteFrame === 'function') {
+        try { cs.setSpriteFrame(pm.current()); } catch (_) { /* 帧切换失败忽略 */ }
       }
     }
   });

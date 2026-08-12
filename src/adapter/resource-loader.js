@@ -67,6 +67,11 @@ function createResourceLoader(adapter = browserAdapter) {
     return rt.getURL(relPath);
   }
 
+  /** 返回雪碧图绝对 URL（DDS §5.2 getSpriteUrl）。 */
+  function getSpriteUrl() {
+    return getUrl(CONFIG.SPRITE_PATH);
+  }
+
   async function preload(frames = ALL_MOVE_FRAMES) {
     const list = Array.isArray(frames) ? frames : [];
     let failedCount = 0;
@@ -142,7 +147,7 @@ function createResourceLoader(adapter = browserAdapter) {
     fallbackEl = null;
   }
 
-  return Object.freeze({ getUrl, preload, preloadSprite, preloadRest, get, getRest, getFallback, invalidate });
+  return Object.freeze({ getUrl, getSpriteUrl, preload, preloadSprite, preloadRest, get, getRest, getFallback, invalidate });
 }
 
 const resourceLoader = createResourceLoader();

@@ -26,7 +26,12 @@ const mockCanvasStage = {
   getSize: vi.fn(() => ({ w: 0, h: 0 })),
   suspend: vi.fn(),
   resume: vi.fn(),
-  getState: vi.fn(() => 'Idle')
+  getState: vi.fn(() => 'Idle'),
+  setSpriteBackground: vi.fn(),
+  setSpriteFrame: vi.fn(),
+  showCanvas: vi.fn(),
+  showSprite: vi.fn(),
+  isSpriteMode: vi.fn(() => false)
 };
 
 const mockOverlay = {
@@ -70,7 +75,8 @@ vi.mock('../../adapter/storage-service.js', () => ({
 
 vi.mock('../../adapter/resource-loader.js', () => ({
   default: {
-    getUrl: vi.fn(() => ''),
+    getUrl: vi.fn(() => 'chrome-extension://test/res/spine/move_sprite.png'),
+    getSpriteUrl: vi.fn(() => 'chrome-extension://test/res/spine/move_sprite.png'),
     preload: vi.fn(async () => {}),
     preloadSprite: vi.fn(async () => true),
     preloadRest: vi.fn(async () => {}),

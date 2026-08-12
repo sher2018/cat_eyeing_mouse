@@ -1,5 +1,7 @@
 // path: src/content/transition-renderer.js
 // M-08 CanvasTransitionRenderer —— 姿态过渡渲染（DDS §9，FR-004）。
+// 主模式 css：CSS class 切换 background-position（GPU 合成，无闪烁）。
+// 备选 crossfade：Canvas alpha 混合淡入淡出。
 // 上游：M-07 PoseStateMachine 订阅 onPoseChange→playTo；下游：M-04 ResourceLoader、M-09 CanvasStage。
 
 import { createLogger } from '../shared/logger.js';
@@ -13,6 +15,7 @@ import {
 const log = createLogger('TransitionRenderer');
 
 const CONFIG = Object.freeze({
+  MODE_CSS: 'css',
   MODE_FRAMES: 'frames',
   MODE_CROSSFADE: 'crossfade',
   THROTTLE_MS: TRANSITION_THROTTLE_MS,
@@ -30,18 +33,16 @@ const STATE = Object.freeze({
   PLAYING: 'Playing'
 });
 
-/** 降级链：frames 序列缺失 → crossfade → 硬切（DDS §9.6）。 */
-
 /**
  * 创建过渡渲染器实例。
  * @param {{canvasStage?:object, resourceLoader?:object, mode?:string}} [opts]
  * @returns {object} 冻结接口
  */
-function createCanvasTransitionRenderer({ canvasStage = null, resourceLoader = null, mode = CONFIG.MODE_FRAMES } = {}) {
+function createCanvasTransitionRenderer({ canvasStage = null, resourceLoader = null, mode = CONFIG.MODE_CSS } = {}) {
   const completeListeners = new Set();
   const internals = {
     state: STATE.IDLE,
-    mode: mode === CONFIG.MODE_CROSSFADE ? CONFIG.MODE_CROSSFADE : CONFIG.MODE_FRAMES,
+    mode: (mode === CONFIG.MODE_CROSSFADE || mode === CONFIG.MODE_FRAMES) ? mode : CONFIG.MODE_CSS,
     current: SectorId.CENTER,
     rafId: null,
     lastPlayAt: 0,
@@ -66,6 +67,25 @@ function createCanvasTransitionRenderer({ canvasStage = null, resourceLoader = n
     const result = resourceLoader.get(sector);
     return result && result.ok ? result.value : null;
   }
+
+  // ── CSS 模式：瞬时 background-position 切换（GPU 合成，无闪烁）──
+
+  function playCss(target) {
+    if (target === internals.current) return;
+    const from = internals.current;
+    internals.current = target;
+    log.info('css_frame_switch', { from, to: target });
+    if (canvasStage && typeof canvasStage.setSpriteFrame === 'function') {
+      try {
+        canvasStage.setSpriteFrame(target);
+      } catch (e) {
+        log.warn(ERROR_CODES.TR_RENDER_FAILED, { msg: e && e.message });
+      }
+    }
+    emitComplete();
+  }
+
+  // ── Crossfade 模式（备选）：Canvas alpha 混合 ──
 
   function drawCrossfade(ctx, t) {
     const { fromImg, toImg } = internals;
@@ -131,6 +151,7 @@ function createCanvasTransitionRenderer({ canvasStage = null, resourceLoader = n
       return;
     }
     internals.startTime = typeof performance !== 'undefined' ? performance.now() : Date.now();
+    internals.state = STATE.PLAYING;
     scheduleNext(tick);
   }
 
@@ -146,6 +167,13 @@ function createCanvasTransitionRenderer({ canvasStage = null, resourceLoader = n
   }
 
   function playTo(target) {
+    // CSS 模式：瞬时帧切换，无 rAF 循环，无 alpha 混合，无闪烁
+    if (internals.mode === CONFIG.MODE_CSS) {
+      playCss(target);
+      return;
+    }
+
+    // Crossfade / Frames 模式（备选）
     const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
     if (now - internals.lastPlayAt < CONFIG.THROTTLE_MS) {
       internals.pendingTarget = target;
@@ -158,14 +186,11 @@ function createCanvasTransitionRenderer({ canvasStage = null, resourceLoader = n
     }
     const from = internals.current;
     internals.current = target;
-    internals.state = STATE.PLAYING;
     log.info('transition_start', { from, to: target, mode: internals.mode });
     if (internals.mode === CONFIG.MODE_FRAMES) {
       log.warn(ERROR_CODES.TR_FRAMES_MISSING, { reason: 'frames_unavailable_fallback_crossfade', from, to: target });
-      startCrossfade(from, target);
-    } else {
-      startCrossfade(from, target);
     }
+    startCrossfade(from, target);
   }
 
   function cancel() {
@@ -181,7 +206,7 @@ function createCanvasTransitionRenderer({ canvasStage = null, resourceLoader = n
   }
 
   function setMode(nextMode) {
-    internals.mode = nextMode === CONFIG.MODE_CROSSFADE ? CONFIG.MODE_CROSSFADE : CONFIG.MODE_FRAMES;
+    internals.mode = (nextMode === CONFIG.MODE_CROSSFADE || nextMode === CONFIG.MODE_FRAMES) ? nextMode : CONFIG.MODE_CSS;
   }
 
   function onComplete(cb) {

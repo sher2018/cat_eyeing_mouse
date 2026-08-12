@@ -74,7 +74,12 @@ async function broadcastViaTabs(adapter, message) {
   const tabsApi = adapter.tabs();
   const query = typeof tabsApi.query === 'function' ? await tabsApi.query({}) : [];
   for (const tab of query) {
-    if (tabsApi.sendMessage) await tabsApi.sendMessage(tab.id, message);
+    if (!tab.id) continue;
+    try {
+      if (tabsApi.sendMessage) await tabsApi.sendMessage(tab.id, message);
+    } catch (_) {
+      /* chrome:// 等受限页面忽略 */
+    }
   }
 }
 

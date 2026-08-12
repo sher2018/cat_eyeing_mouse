@@ -41,9 +41,11 @@ const REST_FRAME = 'res/rest/sit_back/sit_back.png';
 
 /** 雪碧图配置（性能优化：1 次请求替代 9 次） */
 const SPRITE_PATH = 'res/spine/move_sprite.png';
+const SPRITE_CSS_PATH = 'res/spine/move_sprite.css';
 const SPRITE_FRAME_SIZE = 128;
 const SPRITE_COLS = 3;
 const SPRITE_ROWS = 3;
+const CSS_FRAME_CLASS_PREFIX = 'move-sprite-';
 
 /** 过渡帧目录（构建期生成产物） */
 const TRANSITION_FRAME_DIR = 'res/move/transitions';
@@ -120,9 +122,11 @@ export {
   ALL_MOVE_FRAMES,
   REST_FRAME,
   SPRITE_PATH,
+  SPRITE_CSS_PATH,
   SPRITE_FRAME_SIZE,
   SPRITE_COLS,
   SPRITE_ROWS,
+  CSS_FRAME_CLASS_PREFIX,
   TRANSITION_FRAME_DIR,
   SECTOR_BANDS,
   IDLE_THRESHOLD_MS,

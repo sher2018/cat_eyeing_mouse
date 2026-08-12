@@ -9,7 +9,11 @@ import {
   OVERLAY_BG_TRANSPARENT,
   DEFAULT_SETTINGS,
   ALL_MOVE_FRAMES,
-  SectorId
+  SectorId,
+  SPRITE_PATH,
+  SPRITE_FRAME_SIZE,
+  SPRITE_COLS,
+  CSS_FRAME_CLASS_PREFIX
 } from '../shared/constants.js';
 
 const log = createLogger('OverlayContainer');
@@ -53,16 +57,26 @@ function computeDefaultPosition(catSize, gap, viewport) {
   return Object.freeze({ x: Math.max(0, vw - w - gap), y: Math.max(0, vh - h - gap) });
 }
 
-/** 构造注入到 Shadow/iframe 的样式文本（容器透传，仅猫区域响应）。 */
+/** 构造注入到 Shadow/iframe 的样式文本（容器透传，仅猫区域响应 + 雪碧图帧定位）。 */
 function buildOverlayCss(catSize) {
   const w = catSize.w || CONFIG.CAT_SIZE.w;
   const h = catSize.h || CONFIG.CAT_SIZE.h;
   const bg = CONFIG.BG_TRANSPARENT ? 'transparent' : '#fff';
+  const fs = SPRITE_FRAME_SIZE;
+  const cols = SPRITE_COLS;
+  // 雪碧图帧 background-position 规则（DDS §5.4）
+  let frameCss = '';
+  for (let i = 0; i < 9; i++) {
+    const col = i % cols;
+    const row = Math.floor(i / cols);
+    frameCss += `.${CSS_FRAME_CLASS_PREFIX}${i} { background-position: -${col * fs}px -${row * fs}px; }\n`;
+  }
   return [
     `:host, .cem-overlay { position: fixed; left: 0; top: 0; width: 100%; height: 100%;`,
     `  z-index: ${CONFIG.Z_INDEX}; background: ${bg}; pointer-events: none; }`,
     `.${CONFIG.CAT_LAYER_CLASS} { position: fixed; left: 0; top: 0; width: ${w}px; height: ${h}px;`,
-    `  pointer-events: ${CONFIG.POINTER_AUTO}; transform: translate(0px, 0px); }`
+    `  pointer-events: ${CONFIG.POINTER_AUTO}; transform: translate(0px, 0px); }`,
+    frameCss
   ].join('\n');
 }
 
@@ -128,10 +142,24 @@ async function preloadFrames(resourceLoader) {
   }
 }
 
-/** 渲染初始帧（0.png / CENTER），失败回退 fallback。 */
+/** 渲染初始帧（DDS §10.2：CSS sprite 主模式 → Canvas drawImage 备选）。 */
 function renderInitialFrame(resourceLoader, canvasStage) {
-  if (!resourceLoader || typeof resourceLoader.get !== 'function') return;
-  if (!canvasStage || typeof canvasStage.drawImage !== 'function') return;
+  if (!resourceLoader || !canvasStage) return;
+  // CSS sprite 模式：设置背景图 + 初始帧类
+  if (typeof canvasStage.setSpriteBackground === 'function' && typeof resourceLoader.getUrl === 'function') {
+    const spriteUrl = resourceLoader.getUrl(SPRITE_PATH);
+    if (spriteUrl) {
+      canvasStage.setSpriteBackground(spriteUrl);
+      if (typeof canvasStage.setSpriteFrame === 'function') {
+        canvasStage.setSpriteFrame(SectorId.CENTER);
+      }
+      log.info('sprite_initial_frame', {});
+      return;
+    }
+  }
+  // 备选：Canvas drawImage
+  if (typeof canvasStage.drawImage !== 'function') return;
+  if (typeof resourceLoader.get !== 'function') return;
   const result = resourceLoader.get(SectorId.CENTER);
   const image = result && result.ok ? result.value : safeFallback(resourceLoader);
   if (!image) return;
@@ -175,7 +203,8 @@ function createOverlayContainer({
     drag: null,
     clamp: DEFAULT_SETTINGS.clampToViewport,
     position: { x: 0, y: 0 },
-    cleanups: []
+    cleanups: [],
+    prevViewport: { w: 0, h: 0 }
   };
 
   function setPosition(pos) {
@@ -232,6 +261,55 @@ function createOverlayContainer({
     log.info('unmounted', {});
   }
 
+  /** 绑定 window resize + 定时轮询双保险，检测视口变化并校正猫位置（FR-001）。 */
+  function attachResizeListener() {
+    if (typeof window === 'undefined') return;
+    // resize 事件直接同步处理（不使用 rAF 节流，避免最大化时 rAF 延迟）
+    const onResize = () => repositionOnResize();
+    window.addEventListener('resize', onResize);
+    internals.cleanups.push(() => window.removeEventListener('resize', onResize));
+    // 定时轮询兜底：某些场景 resize 事件不触发（如全屏切换、DPI 变化）
+    let pollTimer = setInterval(() => {
+      const cw = window.innerWidth;
+      const ch = window.innerHeight;
+      if (internals.prevViewport.w !== cw || internals.prevViewport.h !== ch) {
+        repositionOnResize();
+      }
+    }, 500);
+    internals.cleanups.push(() => clearInterval(pollTimer));
+  }
+
+  /** resize 后校正位置：按比例保持猫在视口中的相对位置（窗口模式切换不漂移）。 */
+  function repositionOnResize() {
+    if (internals.state !== STATE.MOUNTED) return;
+    if (typeof window === 'undefined') return;
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    if (vw <= 0 || vh <= 0) return;
+    const pos = internals.position;
+    const prev = internals.prevViewport;
+    let x = pos.x;
+    let y = pos.y;
+    // 有前次视口尺寸且尺寸变化时，按比例保持相对位置（防止反复切换漂移）
+    if (prev.w > 0 && prev.h > 0 && (prev.w !== vw || prev.h !== vh)) {
+      const ratioX = (pos.x + size.w / 2) / prev.w;
+      const ratioY = (pos.y + size.h / 2) / prev.h;
+      x = Math.round(ratioX * vw - size.w / 2);
+      y = Math.round(ratioY * vh - size.h / 2);
+    }
+    // 越出右/下边界 → 贴边收回
+    if (x + size.w > vw) x = Math.max(0, vw - size.w);
+    if (y + size.h > vh) y = Math.max(0, vh - size.h);
+    // 越出左/上边界（负坐标）→ 回到 0
+    if (x < 0) x = 0;
+    if (y < 0) y = 0;
+    internals.prevViewport = { w: vw, h: vh };
+    if (x !== pos.x || y !== pos.y) {
+      setPosition({ x, y });
+      log.info('resize_reposition', { from: pos, to: { x, y }, vw, vh });
+    }
+  }
+
   function attachMouseListeners() {
     if (typeof document === 'undefined') return;
     const onMove = (event) => {
@@ -278,11 +356,24 @@ function createOverlayContainer({
   }
 
   async function applyInitialPosition() {
+    // 同步设置默认位置（右下角贴边），避免 async 竞态期间猫在 (0,0)
+    const defaultPos = computeDefaultPosition(size, CONFIG.DEFAULT_EDGE_GAP_PX);
+    setPosition(defaultPos);
+    // 同步记录当前视口作为比例基准
+    const vw0 = typeof window !== 'undefined' ? window.innerWidth : 0;
+    const vh0 = typeof window !== 'undefined' ? window.innerHeight : 0;
+    if (vw0 > 0 && vh0 > 0) {
+      internals.prevViewport = { w: vw0, h: vh0 };
+    }
+    // 异步读取记忆位置，覆盖默认值
     const remembered = await readRememberedPosition(storageService);
     if (remembered) {
-      setPosition(remembered);
-    } else {
-      setPosition(computeDefaultPosition(size, CONFIG.DEFAULT_EDGE_GAP_PX));
+      // 校正记忆位置：若越出当前视口则贴边收回
+      const vw = typeof window !== 'undefined' ? window.innerWidth : 0;
+      const vh = typeof window !== 'undefined' ? window.innerHeight : 0;
+      const clampedX = vw > 0 ? Math.min(remembered.x, Math.max(0, vw - size.w)) : remembered.x;
+      const clampedY = vh > 0 ? Math.min(remembered.y, Math.max(0, vh - size.h)) : remembered.y;
+      setPosition({ x: clampedX, y: clampedY });
     }
     log.info('mounted', { position: internals.position });
   }
@@ -300,6 +391,11 @@ function createOverlayContainer({
     mountCanvasStage(canvasStageFactory, root, catLayer, size, internals);
     startPoseMachine(poseMachineFactory, size, internals);
     attachMouseListeners();
+    attachResizeListener();
+    internals.prevViewport = {
+      w: typeof window !== 'undefined' ? window.innerWidth : 0,
+      h: typeof window !== 'undefined' ? window.innerHeight : 0
+    };
     internals.clamp = resolveClamp(storageService);
     bindDrag(internals.clamp);
     void preloadFrames(resourceLoader).then(() => {

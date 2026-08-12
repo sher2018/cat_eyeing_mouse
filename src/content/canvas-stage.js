@@ -1,15 +1,17 @@
 // path: src/content/canvas-stage.js
-// M-09 CanvasStage —— Canvas 2D 绘制宿主与 rAF 循环（DDS §10，FR-004 AC3/AC4、NFR-002/007）。
-// 上游：M-08 TransitionRenderer、M-13 OverlayContainer；下游：浏览器 Canvas 2D + rAF。
+// M-09 CanvasStage —— CSS Sprite 宿主（主）与 Canvas 2D 绘制（备选）+ rAF 循环（DDS §10）。
+// 主模式：CSS background-position 切换（GPU 合成，无重绘/闪烁）。
+// 备选模式：Canvas 2D drawImage（crossfade/rest 帧使用）。
 
 import { createLogger } from '../shared/logger.js';
-import { DPR_CAP, RAF_SUSPEND_ON_HIDDEN } from '../shared/constants.js';
+import { DPR_CAP, RAF_SUSPEND_ON_HIDDEN, CSS_FRAME_CLASS_PREFIX } from '../shared/constants.js';
 
 const log = createLogger('CanvasStage');
 
 const CONFIG = Object.freeze({
   DPR_CAP,
-  SUSPEND_ON_HIDDEN: RAF_SUSPEND_ON_HIDDEN
+  SUSPEND_ON_HIDDEN: RAF_SUSPEND_ON_HIDDEN,
+  FRAME_CLASS_PREFIX: CSS_FRAME_CLASS_PREFIX
 });
 
 const ERROR_CODES = Object.freeze({
@@ -45,6 +47,9 @@ function createCanvasStage() {
     state: STATE.UNMOUNTED,
     canvas: null,
     ctx: null,
+    spriteEl: null,
+    spriteMode: false,
+    currentFrameClass: '',
     size: { w: 0, h: 0 },
     dpr: 1,
     visibilityHandler: null
@@ -55,11 +60,19 @@ function createCanvasStage() {
     internals.dpr = dpr;
     internals.size = { w: size.w, h: size.h };
     const cv = internals.canvas;
-    cv.width = Math.round(size.w * dpr);
-    cv.height = Math.round(size.h * dpr);
-    cv.style.width = `${size.w}px`;
-    cv.style.height = `${size.h}px`;
-    internals.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    if (cv) {
+      cv.width = Math.round(size.w * dpr);
+      cv.height = Math.round(size.h * dpr);
+      cv.style.width = `${size.w}px`;
+      cv.style.height = `${size.h}px`;
+    }
+    if (internals.ctx) {
+      internals.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    }
+    if (internals.spriteEl) {
+      internals.spriteEl.style.width = `${size.w}px`;
+      internals.spriteEl.style.height = `${size.h}px`;
+    }
   }
 
   function attachVisibility() {
@@ -81,18 +94,28 @@ function createCanvasStage() {
   function mount(hostEl, size) {
     if (internals.state !== STATE.UNMOUNTED) unmount();
     if (!hostEl || typeof document === 'undefined') return;
+
+    // CSS Sprite 宿主元素（主模式，DDS §10.2 setSpriteFrame）
+    const spriteEl = document.createElement('div');
+    spriteEl.style.cssText = `width:${size.w}px;height:${size.h}px;background-repeat:no-repeat;display:none;pointer-events:none;`;
+    internals.spriteEl = spriteEl;
+    hostEl.appendChild(spriteEl);
+
+    // Canvas 2D（备选模式）
     const canvas = document.createElement('canvas');
     const ctx = createContext(canvas);
-    if (!ctx) {
+    if (ctx) {
+      canvas.style.display = 'block';
+      canvas.style.pointerEvents = 'none';
+      internals.canvas = canvas;
+      internals.ctx = ctx;
+      applySize(size);
+      hostEl.appendChild(canvas);
+    } else {
       log.error(ERROR_CODES.CANVAS_UNAVAILABLE, {});
-      return;
     }
-    canvas.style.display = 'block';
-    canvas.style.pointerEvents = 'none';
-    internals.canvas = canvas;
-    internals.ctx = ctx;
-    applySize(size);
-    hostEl.appendChild(canvas);
+
+    internals.size = { w: size.w, h: size.h };
     internals.state = STATE.RUNNING;
     attachVisibility();
     log.info('mounted', { w: size.w, h: size.h, dpr: internals.dpr });
@@ -101,17 +124,23 @@ function createCanvasStage() {
   function unmount() {
     if (internals.state === STATE.UNMOUNTED) return;
     detachVisibility();
+    if (internals.spriteEl && internals.spriteEl.parentNode) {
+      internals.spriteEl.parentNode.removeChild(internals.spriteEl);
+    }
     if (internals.canvas && internals.canvas.parentNode) {
       internals.canvas.parentNode.removeChild(internals.canvas);
     }
+    internals.spriteEl = null;
     internals.canvas = null;
     internals.ctx = null;
+    internals.spriteMode = false;
+    internals.currentFrameClass = '';
     internals.state = STATE.UNMOUNTED;
     log.info('unmounted', {});
   }
 
   function setSize(size) {
-    if (internals.state === STATE.UNMOUNTED || !internals.canvas) return;
+    if (internals.state === STATE.UNMOUNTED) return;
     applySize(size);
   }
 
@@ -119,6 +148,41 @@ function createCanvasStage() {
     return Object.freeze({ w: internals.size.w, h: internals.size.h });
   }
 
+  /** CSS 雪碧图模式：设置背景图并显示 sprite div（隐藏 canvas）。 */
+  function setSpriteBackground(url) {
+    if (!internals.spriteEl || !url) return;
+    internals.spriteEl.style.backgroundImage = `url("${url}")`;
+    internals.spriteEl.style.display = 'block';
+    internals.spriteMode = true;
+    if (internals.canvas) internals.canvas.style.display = 'none';
+  }
+
+  /** CSS 雪碧图模式：切换 background-position 帧类（DDS §10.2 setSpriteFrame）。 */
+  function setSpriteFrame(idx) {
+    if (!internals.spriteEl) return;
+    const newClass = `${CONFIG.FRAME_CLASS_PREFIX}${idx}`;
+    if (internals.currentFrameClass) {
+      internals.spriteEl.classList.remove(internals.currentFrameClass);
+    }
+    internals.spriteEl.classList.add(newClass);
+    internals.currentFrameClass = newClass;
+  }
+
+  /** 切换到 Canvas 备选模式（rest 帧等使用）。 */
+  function showCanvas() {
+    if (internals.spriteEl) internals.spriteEl.style.display = 'none';
+    if (internals.canvas) internals.canvas.style.display = 'block';
+    internals.spriteMode = false;
+  }
+
+  /** 切换回 CSS 雪碧图模式。 */
+  function showSprite() {
+    if (internals.canvas) internals.canvas.style.display = 'none';
+    if (internals.spriteEl) internals.spriteEl.style.display = 'block';
+    internals.spriteMode = true;
+  }
+
+  /** Canvas 备选模式：清空并绘制单张图片。 */
   function drawImage(img) {
     if (!internals.ctx || internals.state === STATE.UNMOUNTED) return;
     if (!img) return;
@@ -160,7 +224,15 @@ function createCanvasStage() {
     return internals.state;
   }
 
-  return Object.freeze({ mount, unmount, drawImage, requestFrame, setSize, getSize, suspend, resume, getState });
+  function isSpriteMode() {
+    return internals.spriteMode;
+  }
+
+  return Object.freeze({
+    mount, unmount, drawImage, requestFrame, setSize, getSize,
+    suspend, resume, getState,
+    setSpriteBackground, setSpriteFrame, showCanvas, showSprite, isSpriteMode
+  });
 }
 
 export { createCanvasStage, CONFIG, ERROR_CODES, STATE };

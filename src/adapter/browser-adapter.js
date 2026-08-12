@@ -110,6 +110,19 @@ function storage() {
   });
 }
 
+/** 统一 tabs API 包装 */
+function tabs() {
+  const { ns } = detectNamespace();
+  if (!ns || !ns.tabs) {
+    throw makeAdapterError(ERROR_CODES.API_MISSING, 'tabs.* unavailable');
+  }
+  const t = ns.tabs;
+  return Object.freeze({
+    query: (info) => promisify((i, cb) => t.query(i, cb))(info),
+    sendMessage: (tabId, msg) => promisify((id, m, cb) => t.sendMessage(id, m, cb))(tabId, msg)
+  });
+}
+
 /** 统一 i18n API 包装 */
 function i18n() {
   const { ns } = detectNamespace();
@@ -158,6 +171,7 @@ function ensureSupported() {
 export const browserAdapter = Object.freeze({
   runtime,
   storage,
+  tabs,
   i18n,
   isEdge,
   isChrome,

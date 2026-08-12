@@ -80,13 +80,29 @@ function createDomStub({ attachShadowThrows = false } = {}) {
     }
   };
 
+  const windowListeners = {};
+  const windowStub = {
+    innerWidth: 1000,
+    innerHeight: 800,
+    addEventListener(type, cb) { (windowListeners[type] = windowListeners[type] || []).push(cb); },
+    removeEventListener(type, cb) {
+      const arr = windowListeners[type];
+      if (arr) windowListeners[type] = arr.filter((fn) => fn !== cb);
+    },
+    fireResize() {
+      const arr = windowListeners['resize'] || [];
+      for (const cb of arr) cb();
+    }
+  };
+
   const originalDocument = globalThis.document;
   const originalWindow = globalThis.window;
   globalThis.document = documentStub;
-  globalThis.window = Object.assign({}, globalThis.window, { innerWidth: 1000, innerHeight: 800 });
+  globalThis.window = Object.assign({}, globalThis.window, windowStub);
 
   return {
     documentStub,
+    windowStub,
     body,
     restore() {
       globalThis.document = originalDocument;
@@ -113,7 +129,12 @@ function createCanvasStageStub() {
     drawImage: vi.fn(),
     requestFrame: vi.fn(),
     suspend: vi.fn(),
-    resume: vi.fn()
+    resume: vi.fn(),
+    setSpriteBackground: vi.fn(),
+    setSpriteFrame: vi.fn(),
+    showCanvas: vi.fn(),
+    showSprite: vi.fn(),
+    isSpriteMode: vi.fn(() => false)
   };
 }
 
@@ -372,5 +393,113 @@ describe('OverlayContainer', () => {
     expect(CONFIG.Z_INDEX).toBe(2147483647);
     expect(CONFIG.DEFAULT_EDGE_GAP_PX).toBe(8);
     expect(CONFIG.CAT_SIZE).toEqual({ w: 128, h: 128 });
+  });
+
+  it('window resize 缩小 → 按比例保持相对位置（越界 clamp）', async () => {
+    const overlay = createOverlayContainer({
+      canvasStageFactory: () => createCanvasStageStub(),
+      poseMachineFactory: () => createPoseMachineStub(),
+      dragFactory: () => createDragStub(),
+      storageService: createStorageStub(null),
+      catSize: { w: 128, h: 128 }
+    });
+    overlay.mount();
+    await flushMicrotasks();
+    // 初始右下角：1000x800 → (864, 664)
+    expect(overlay.getPosition()).toEqual({ x: 864, y: 664 });
+    // 模拟窗口缩小：1200x900（足够大，不会触发 clamp）
+    globalThis.window.innerWidth = 1200;
+    globalThis.window.innerHeight = 900;
+    dom.windowStub.fireResize();
+    // resize 处理现在同步执行（无 rAF 节流）
+    const pos = overlay.getPosition();
+    expect(pos.x + 64).toBeCloseTo(0.928 * 1200, -1);
+    expect(pos.y + 64).toBeCloseTo(0.91 * 900, -1);
+    overlay.unmount();
+    dom.restore();
+  });
+
+  it('记忆位置超出当前视口 → mount 时自动校正到视口内', async () => {
+    // 存储中记录的位置是最大化时的坐标（1856, 972），但当前视口只有 1000x800
+    const storageWithRemembered = createStorageStub({ x: 1856, y: 972 });
+    const overlay = createOverlayContainer({
+      canvasStageFactory: () => createCanvasStageStub(),
+      poseMachineFactory: () => createPoseMachineStub(),
+      dragFactory: () => createDragStub(),
+      storageService: storageWithRemembered,
+      catSize: { w: 128, h: 128 }
+    });
+    overlay.mount();
+    await flushMicrotasks();
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    // 记忆位置 1856 > 1000-128=872 → 校正到 872；972 > 800-128=672 → 校正到 672
+    const pos = overlay.getPosition();
+    expect(pos.x).toBeLessThanOrEqual(1000 - 128);
+    expect(pos.y).toBeLessThanOrEqual(800 - 128);
+    overlay.unmount();
+    dom.restore();
+  });
+
+  it('窗口从小变大（普通→最大化）→ 按比例保持相对位置', async () => {
+    const overlay = createOverlayContainer({
+      canvasStageFactory: () => createCanvasStageStub(),
+      poseMachineFactory: () => createPoseMachineStub(),
+      dragFactory: () => createDragStub(),
+      storageService: createStorageStub(null),
+      catSize: { w: 128, h: 128 }
+    });
+    overlay.mount();
+    await flushMicrotasks();
+    // 初始 1000x800，默认右下角：(864, 664)
+    expect(overlay.getPosition()).toEqual({ x: 864, y: 664 });
+    // 模拟窗口变大：1920x1080（最大化）
+    globalThis.window.innerWidth = 1920;
+    globalThis.window.innerHeight = 1080;
+    dom.windowStub.fireResize();
+    // resize 处理同步执行
+    const pos = overlay.getPosition();
+    expect(pos.x + 64).toBeCloseTo(0.928 * 1920, 0);
+    expect(pos.y + 64).toBeCloseTo(0.91 * 1080, 0);
+    overlay.unmount();
+    dom.restore();
+  });
+
+  it('窗口化→最大化→窗口化循环切换 → 比例位置不漂移', async () => {
+    const overlay = createOverlayContainer({
+      canvasStageFactory: () => createCanvasStageStub(),
+      poseMachineFactory: () => createPoseMachineStub(),
+      dragFactory: () => createDragStub(),
+      storageService: createStorageStub(null),
+      catSize: { w: 128, h: 128 }
+    });
+    overlay.mount();
+    await flushMicrotasks();
+    // 初始 1000x800，右下角默认：(864, 664)
+    expect(overlay.getPosition()).toEqual({ x: 864, y: 664 });
+    const ratioX0 = (864 + 64) / 1000; // 0.928
+    const ratioY0 = (664 + 64) / 800;  // 0.91
+
+    // 循环：用足够大的尺寸避免 clamp 干扰
+    const sizes = [
+      [1920, 1080],
+      [1200, 900],
+      [1920, 1080],
+      [1200, 900],
+      [1920, 1080]
+    ];
+    for (const [w, h] of sizes) {
+      globalThis.window.innerWidth = w;
+      globalThis.window.innerHeight = h;
+      dom.windowStub.fireResize();
+      // resize 处理同步执行
+      const pos = overlay.getPosition();
+      // 每次切换后，猫中心点的比例位置应保持一致（允许 0.02 误差，含 Math.round 精度）
+      const ratioX = (pos.x + 64) / w;
+      const ratioY = (pos.y + 64) / h;
+      expect(Math.abs(ratioX - ratioX0)).toBeLessThan(0.02);
+      expect(Math.abs(ratioY - ratioY0)).toBeLessThan(0.02);
+    }
+    overlay.unmount();
+    dom.restore();
   });
 });

@@ -28,7 +28,7 @@
       "run_at": "document_idle"
     }
   ],
-  "permissions": ["storage"],
+  "permissions": ["storage", "tabs"],
   "web_accessible_resources": [
     {
       "resources": ["res/**"],
