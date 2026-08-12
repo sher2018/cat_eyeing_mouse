@@ -131,10 +131,12 @@ function hasExtensionRuntime() {
   return !!(ns && ns.runtime && typeof ns.runtime.onMessage === 'object');
 }
 
-// 浏览器入口：仅在有真实 chrome/browser 运行时装配依赖并注册。
-if (hasExtensionRuntime()) {
-  void (async () => {
-    try {
+let bootPromise = null;
+
+/** 惰性装配依赖（首次消息到达时触发，避免阻塞顶层监听器同步注册）。 */
+function ensureBooted() {
+  if (!bootPromise) {
+    bootPromise = (async () => {
       const [{ browserAdapter }, storageMod] = await Promise.all([
         import('../adapter/browser-adapter.js'),
         import('../adapter/storage-service.js').catch(() => ({}))
@@ -142,12 +144,30 @@ if (hasExtensionRuntime()) {
       const storageService = storageMod && typeof storageMod.createStorageService === 'function'
         ? storageMod.createStorageService(browserAdapter)
         : undefined;
-      setupServiceWorker({ adapter: browserAdapter, storageService });
+      const sw = setupServiceWorker({ adapter: browserAdapter, storageService, autoRegister: false });
       log.info('installed', { reason: 'runtime_detected' });
-    } catch (e) {
-      log.warn('bootstrap_failed', { msg: e && e.message ? e.message : String(e) });
-    }
-  })();
+      return sw;
+    })();
+  }
+  return bootPromise;
+}
+
+// 浏览器入口：顶层同步注册 onMessage（MV3 要求），消息到达后惰性装配依赖并分发。
+if (hasExtensionRuntime()) {
+  const ns = globalThis.chrome || globalThis.browser;
+  ns.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    void ensureBooted()
+      .then((sw) => {
+        try { void sw.handler(message); } catch (e) {
+          log.warn('handler_error', { msg: e && e.message ? e.message : String(e) });
+        }
+      })
+      .catch((e) => {
+        log.warn('bootstrap_failed', { msg: e && e.message ? e.message : String(e) });
+      });
+    return true;
+  });
+  log.info('listener_registered', {});
 }
 
 export { setupServiceWorker, CONFIG, ERROR_CODES };

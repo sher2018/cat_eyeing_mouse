@@ -109,11 +109,20 @@ function createFallbackIframe(hostDiv) {
   return iframe;
 }
 
-/** 预加载全部姿态帧，失败仅记 WARN（不阻塞挂载）。 */
+/** 预加载全部姿态帧（优先雪碧图 1 次请求，回退逐帧加载），同时预加载休息帧。 */
 async function preloadFrames(resourceLoader) {
-  if (!resourceLoader || typeof resourceLoader.preload !== 'function') return;
+  if (!resourceLoader) return;
   try {
-    await resourceLoader.preload(ALL_MOVE_FRAMES);
+    let spriteOk = false;
+    if (typeof resourceLoader.preloadSprite === 'function') {
+      spriteOk = await resourceLoader.preloadSprite();
+    }
+    if (!spriteOk && typeof resourceLoader.preload === 'function') {
+      await resourceLoader.preload(ALL_MOVE_FRAMES);
+    }
+    if (typeof resourceLoader.preloadRest === 'function') {
+      await resourceLoader.preloadRest();
+    }
   } catch (e) {
     log.warn('preload_failed', { msg: e && e.message ? e.message : String(e) });
   }
@@ -293,8 +302,9 @@ function createOverlayContainer({
     attachMouseListeners();
     internals.clamp = resolveClamp(storageService);
     bindDrag(internals.clamp);
-    void preloadFrames(resourceLoader);
-    renderInitialFrame(resourceLoader, internals.canvasStage);
+    void preloadFrames(resourceLoader).then(() => {
+      renderInitialFrame(resourceLoader, internals.canvasStage);
+    });
     internals.state = STATE.MOUNTED;
     void applyInitialPosition();
   }

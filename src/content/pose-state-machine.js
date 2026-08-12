@@ -44,7 +44,8 @@ function createPoseStateMachine({ hoverRadius = 0 } = {}) {
   const internals = {
     state: STATE.TRACKING,
     current: SectorId.CENTER,
-    hover: false
+    hover: false,
+    mouseOutside: false
   };
 
   function notifyPose(from, to) {
@@ -74,6 +75,7 @@ function createPoseStateMachine({ hoverRadius = 0 } = {}) {
 
   function update(pointer, catCenter) {
     if (internals.state === STATE.RESTING) return;
+    if (internals.mouseOutside) return;
     if (!pointer || !catCenter) return;
     const { dx, dy } = computeDelta(catCenter, pointer);
     const target = internals.hover ? SectorId.CENTER : classifySector(dx, dy, radius);
@@ -109,6 +111,22 @@ function createPoseStateMachine({ hoverRadius = 0 } = {}) {
     log.info('state_change', { state: internals.state });
   }
 
+  function notifyMouseLeave() {
+    if (internals.mouseOutside) return;
+    internals.mouseOutside = true;
+    if (internals.state === STATE.RESTING) return;
+    if (internals.current !== SectorId.CENTER) {
+      notifyPose(internals.current, SectorId.CENTER);
+    }
+    log.info('mouse_leave', {});
+  }
+
+  function notifyMouseReenter() {
+    if (!internals.mouseOutside) return;
+    internals.mouseOutside = false;
+    log.info('mouse_reenter', {});
+  }
+
   function getState() {
     return internals.state;
   }
@@ -121,6 +139,8 @@ function createPoseStateMachine({ hoverRadius = 0 } = {}) {
     onHoverChange,
     enterResting,
     exitResting,
+    notifyMouseLeave,
+    notifyMouseReenter,
     getState
   });
 }

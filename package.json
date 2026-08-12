@@ -4,10 +4,13 @@
   "private": true,
   "description": "Cat Eyeing Mouse 浏览器扩展（纯原生 JS，仅单元测试需要 Node.js）",
   "scripts": {
+    "build": "esbuild src/content/content-main.js --bundle --outfile=dist/content.js --format=iife --target=chrome110",
+    "build:watch": "esbuild src/content/content-main.js --bundle --outfile=dist/content.js --format=iife --target=chrome110 --watch",
     "test": "vitest run",
     "test:watch": "vitest"
   },
   "devDependencies": {
+    "esbuild": "^0.23.0",
     "vitest": "^3.0.0",
     "jsdom": "^25.0.0"
   }

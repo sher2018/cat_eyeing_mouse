@@ -87,6 +87,7 @@ async function syncToggleState(adapter, documentRef, copy) {
   const settings = await readSettings(adapter);
   applyClampState(documentRef, settings);
   applyToggleLabel(documentRef, settings, copy);
+  return settings;
 }
 
 async function readSettings(adapter) {
@@ -126,28 +127,20 @@ async function sendToBackground(adapter, documentRef, message) {
     log.info('message_sent', { type: message && message.type });
     return true;
   } catch (e) {
-    log.error(ERROR_CODES.SW_COMM_FAIL, { msg: e && e.message ? e.message : String(e) });
-    disableControls(documentRef);
+    log.warn(ERROR_CODES.SW_COMM_FAIL, { msg: e && e.message ? e.message : String(e) });
     return false;
   }
 }
 
-function disableControls(documentRef) {
-  if (!documentRef || typeof documentRef.getElementById !== 'function') return;
-  [CONFIG.TOGGLE_BTN_ID, CONFIG.CLAMP_INPUT_ID].forEach((id) => {
-    const el = documentRef.getElementById(id);
-    if (el) el.disabled = true;
-  });
-}
-
 /** 绑定按钮事件：toggle→sendMessage + 外部回调；clamp 同理。 */
 function bindEvents(documentRef, deps) {
-  const { adapter, onToggleVisible, onClampChange } = deps;
+  const { adapter, onToggleVisible, onClampChange, flipLocalHidden } = deps;
   const toggleBtn = documentRef.getElementById(CONFIG.TOGGLE_BTN_ID);
   const clampInput = documentRef.getElementById(CONFIG.CLAMP_INPUT_ID);
 
   if (toggleBtn) {
     toggleBtn.addEventListener('click', () => {
+      if (typeof flipLocalHidden === 'function') flipLocalHidden();
       fireCallback(onToggleVisible);
       void sendToBackground(adapter, documentRef, { type: MSG_TYPES.TOGGLE_VISIBLE });
     });
@@ -175,15 +168,24 @@ function fireCallback(cb, payload) {
  */
 function createPopupView({ i18nService, adapter, onToggleVisible, onClampChange } = {}) {
   let initialized = false;
+  let localHidden = DEFAULT_SETTINGS.hidden;
+  let lastCopy = {};
+
+  function flipLocalHidden() {
+    localHidden = !localHidden;
+    applyToggleLabel(document, { hidden: localHidden }, lastCopy);
+    log.info('local_toggle', { hidden: localHidden });
+  }
 
   async function init() {
     const locale = detectLocale(i18nService);
     log.info('popup_init', { locale });
-    const copy = loadCopy(i18nService);
-    applyI18n(document, copy);
+    lastCopy = loadCopy(i18nService);
+    applyI18n(document, lastCopy);
     applyIcon(document, adapter);
-    await syncToggleState(adapter, document, copy);
-    bindEvents(document, { adapter, onToggleVisible, onClampChange });
+    const settings = await syncToggleState(adapter, document, lastCopy);
+    localHidden = !!settings.hidden;
+    bindEvents(document, { adapter, onToggleVisible, onClampChange, flipLocalHidden });
     initialized = true;
   }
 

@@ -100,4 +100,59 @@ describe('PoseStateMachine', () => {
     psm.update({ x: 100, y: 0 }, { x: 0, y: 0 });
     expect(seen.length).toBe(0);
   });
+
+  it('notifyMouseLeave 后 update 被忽略（FR-003 AC5）', () => {
+    const seen = [];
+    psm.onPoseChange((s) => seen.push(s));
+    const center = { x: 0, y: 0 };
+    psm.notifyMouseLeave();
+    psm.update({ x: 1000, y: 0 }, center);
+    expect(seen.length).toBe(0);
+  });
+
+  it('notifyMouseLeave 让猫回到 CENTER', () => {
+    const seen = [];
+    psm.onPoseChange((s) => seen.push(s));
+    const center = { x: 0, y: 0 };
+    psm.update({ x: 100, y: 0 }, center); // E
+    expect(seen.pop()).toBe(SectorId.E);
+    psm.notifyMouseLeave();
+    expect(seen.pop()).toBe(SectorId.CENTER);
+  });
+
+  it('notifyMouseReenter 后 update 恢复', () => {
+    const seen = [];
+    psm.onPoseChange((s) => seen.push(s));
+    const center = { x: 0, y: 0 };
+    psm.notifyMouseLeave();
+    psm.notifyMouseReenter();
+    psm.update({ x: 100, y: 0 }, center);
+    expect(seen.pop()).toBe(SectorId.E);
+  });
+
+  it('notifyMouseLeave 幂等', () => {
+    const seen = [];
+    psm.onPoseChange((s) => seen.push(s));
+    const center = { x: 0, y: 0 };
+    psm.update({ x: 100, y: 0 }, center); // E
+    psm.notifyMouseLeave(); // E → CENTER
+    seen.length = 0;
+    psm.notifyMouseLeave(); // 幂等，不再触发
+    expect(seen.length).toBe(0);
+  });
+
+  it('notifyMouseReenter 未 leave 时调用无副作用', () => {
+    const seen = [];
+    psm.onPoseChange((s) => seen.push(s));
+    psm.notifyMouseReenter();
+    expect(seen.length).toBe(0);
+  });
+
+  it('Resting 态 notifyMouseLeave 不触发 poseChange', () => {
+    const seen = [];
+    psm.onPoseChange((s) => seen.push(s));
+    psm.enterResting();
+    psm.notifyMouseLeave();
+    expect(seen.length).toBe(0);
+  });
 });

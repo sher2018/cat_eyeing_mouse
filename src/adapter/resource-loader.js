@@ -5,7 +5,7 @@
 import browserAdapter from './browser-adapter.js';
 import { ok } from '../shared/types.js';
 import { createLogger } from '../shared/logger.js';
-import { MOVE_FRAMES, REST_FRAME, ALL_MOVE_FRAMES } from '../shared/constants.js';
+import { MOVE_FRAMES, REST_FRAME, ALL_MOVE_FRAMES, SectorId, SPRITE_PATH, SPRITE_FRAME_SIZE, SPRITE_COLS } from '../shared/constants.js';
 
 const log = createLogger('ResourceLoader');
 
@@ -17,7 +17,10 @@ const CONFIG = Object.freeze({
   RES_ROOT: 'res',
   FALLBACK_DATAURL,
   MOVE_FRAMES,
-  REST_FRAME
+  REST_FRAME,
+  SPRITE_PATH,
+  SPRITE_FRAME_SIZE,
+  SPRITE_COLS
 });
 
 const ERROR_CODES = Object.freeze({
@@ -89,12 +92,57 @@ function createResourceLoader(adapter = browserAdapter) {
     return ok(getFallback());
   }
 
+  function getRest() {
+    const path = CONFIG.REST_FRAME;
+    if (cache.has(path)) return ok(cache.get(path));
+    log.warn('rest_not_cached', { path, code: ERROR_CODES.RES_LOAD_FAILED });
+    return ok(getFallback());
+  }
+
+  /** 加载雪碧图（1 次请求），切片为 9 帧缓存，失败返回 false 回退逐帧加载。 */
+  async function preloadSprite() {
+    if (typeof document === 'undefined') return false;
+    const url = getUrl(CONFIG.SPRITE_PATH);
+    const res = await loadImage(url);
+    if (!res.loaded) {
+      log.warn('sprite_load_failed', { path: CONFIG.SPRITE_PATH });
+      return false;
+    }
+    const fs = CONFIG.SPRITE_FRAME_SIZE;
+    for (const sectorId of Object.values(SectorId)) {
+      const path = CONFIG.MOVE_FRAMES[sectorId];
+      const col = sectorId % CONFIG.SPRITE_COLS;
+      const row = Math.floor(sectorId / CONFIG.SPRITE_COLS);
+      const slice = document.createElement('canvas');
+      slice.width = fs;
+      slice.height = fs;
+      const sctx = slice.getContext('2d');
+      if (!sctx) continue;
+      sctx.drawImage(res.img, col * fs, row * fs, fs, fs, 0, 0, fs, fs);
+      cache.set(path, slice);
+    }
+    log.info('sprite_preload_done', { frames: Object.keys(SectorId).length });
+    return true;
+  }
+
+  /** 预加载休息态帧。 */
+  async function preloadRest() {
+    const url = getUrl(CONFIG.REST_FRAME);
+    const res = await loadImage(url);
+    if (res.loaded) {
+      cache.set(CONFIG.REST_FRAME, res.img);
+    } else {
+      log.warn('rest_load_failed', { path: CONFIG.REST_FRAME });
+      cache.set(CONFIG.REST_FRAME, getFallback());
+    }
+  }
+
   function invalidate() {
     cache.clear();
     fallbackEl = null;
   }
 
-  return Object.freeze({ getUrl, preload, get, getFallback, invalidate });
+  return Object.freeze({ getUrl, preload, preloadSprite, preloadRest, get, getRest, getFallback, invalidate });
 }
 
 const resourceLoader = createResourceLoader();

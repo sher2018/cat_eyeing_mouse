@@ -39,6 +39,12 @@ const ALL_MOVE_FRAMES = Object.freeze(Object.values(MOVE_FRAMES));
 /** 休息态素材路径（FR-008） */
 const REST_FRAME = 'res/rest/sit_back/sit_back.png';
 
+/** 雪碧图配置（性能优化：1 次请求替代 9 次） */
+const SPRITE_PATH = 'res/spine/move_sprite.png';
+const SPRITE_FRAME_SIZE = 128;
+const SPRITE_COLS = 3;
+const SPRITE_ROWS = 3;
+
 /** 过渡帧目录（构建期生成产物） */
 const TRANSITION_FRAME_DIR = 'res/move/transitions';
 
@@ -55,8 +61,8 @@ const SECTOR_BANDS = Object.freeze([
   Object.freeze({ id: SectorId.NE, minDeg: -67.5, maxDeg: -22.5 })
 ]);
 
-/** 休息态触发阈值（FR-008 默认 8s） */
-const IDLE_THRESHOLD_MS = 8000;
+/** 休息态触发阈值（FR-008 默认 10s） */
+const IDLE_THRESHOLD_MS = 10000;
 /** 唤醒防抖 */
 const WAKE_DEBOUNCE_MS = 120;
 /** 过渡最小间隔（§6 边界节流） */
@@ -113,6 +119,10 @@ export {
   MOVE_FRAMES,
   ALL_MOVE_FRAMES,
   REST_FRAME,
+  SPRITE_PATH,
+  SPRITE_FRAME_SIZE,
+  SPRITE_COLS,
+  SPRITE_ROWS,
   TRANSITION_FRAME_DIR,
   SECTOR_BANDS,
   IDLE_THRESHOLD_MS,

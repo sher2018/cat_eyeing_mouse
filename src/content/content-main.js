@@ -39,6 +39,8 @@ function createApp() {
   const idle = createIdleDetector();
   let renderer = null;
   let toggle = null;
+  let unbindMouseLeave = null;
+  let unbindMouseReenter = null;
 
   function wireRenderer() {
     const poseMachine = overlay.getPoseMachine();
@@ -52,17 +54,49 @@ function createApp() {
 
   function afterMount() {
     wireRenderer();
+    bindMouseLeaveReenter();
     idle.start();
   }
 
-  // 空闲态：进入休息暂停姿态跟踪；唤醒恢复（FR-008）。惰性查 poseMachine，兼容重挂载。
+  /** 绑定 document mouseleave/mouseenter 驱动 PSM 越界跟踪（FR-003 AC5）。 */
+  function bindMouseLeaveReenter() {
+    const pm = overlay.getPoseMachine();
+    if (!pm) return;
+    const onLeave = () => {
+      if (pm && typeof pm.notifyMouseLeave === 'function') pm.notifyMouseLeave();
+    };
+    const onReenter = () => {
+      if (pm && typeof pm.notifyMouseReenter === 'function') pm.notifyMouseReenter();
+    };
+    document.addEventListener('mouseleave', onLeave);
+    document.addEventListener('mouseenter', onReenter);
+    unbindMouseLeave = () => document.removeEventListener('mouseleave', onLeave);
+    unbindMouseReenter = () => document.removeEventListener('mouseenter', onReenter);
+  }
+
+  // 空闲态：进入休息态渲染 sit_back 帧；唤醒恢复当前姿态帧（FR-008）。
   idle.onIdle(() => {
     const pm = overlay.getPoseMachine();
     if (pm && typeof pm.enterResting === 'function') pm.enterResting();
+    const cs = overlay.getCanvasStage();
+    if (cs && typeof resourceLoader.getRest === 'function') {
+      const result = resourceLoader.getRest();
+      if (result && result.ok && result.value) {
+        try { cs.drawImage(result.value); } catch (_) { /* 渲染失败忽略 */ }
+      }
+    }
   });
   idle.onWake(() => {
     const pm = overlay.getPoseMachine();
     if (pm && typeof pm.exitResting === 'function') pm.exitResting();
+    const cs = overlay.getCanvasStage();
+    if (cs && pm && typeof pm.current === 'function') {
+      const sector = pm.current();
+      const result = resourceLoader.get(sector);
+      if (result && result.ok && result.value) {
+        try { cs.drawImage(result.value); } catch (_) { /* 渲染失败忽略 */ }
+      }
+    }
   });
 
   async function bootstrap() {
@@ -95,6 +129,8 @@ function createApp() {
   }
 
   function dispose() {
+    if (unbindMouseLeave) { unbindMouseLeave(); unbindMouseLeave = null; }
+    if (unbindMouseReenter) { unbindMouseReenter(); unbindMouseReenter = null; }
     idle.stop();
     overlay.unmount();
   }

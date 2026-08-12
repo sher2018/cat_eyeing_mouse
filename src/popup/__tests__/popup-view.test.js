@@ -185,18 +185,21 @@ describe('PopupView', () => {
     expect(dom.tipEl.textContent).toBe('tip_drag_to_move');
   });
 
-  it('SW 通信失败 → 按钮禁用（SW_COMM_FAIL）', async () => {
+  it('SW 通信失败 → 按钮保持可用且本地状态乐观翻转', async () => {
     const dom = createDomStub();
     globalThis.document = dom.documentStub;
+    const copy = { action_show: 'Show', action_hide: 'Hide' };
     const send = vi.fn(async () => { throw new Error('sw down'); });
-    const adapter = createAdapterStub({ sendMessageImpl: send });
-    const view = createPopupView({ i18nService: createI18nStub({}), adapter });
+    const adapter = createAdapterStub({ sendMessageImpl: send, settings: { hidden: false, clampToViewport: true } });
+    const view = createPopupView({ i18nService: createI18nStub(copy), adapter });
     await view.init();
+    expect(dom.toggleBtn.textContent).toBe('Hide');
     dom.toggleBtn.fire('click');
     await Promise.resolve();
     await Promise.resolve();
-    expect(dom.toggleBtn.disabled).toBe(true);
-    expect(dom.clampInput.disabled).toBe(true);
+    expect(dom.toggleBtn.disabled).toBe(false);
+    expect(dom.toggleBtn.textContent).toBe('Show');
+    expect(dom.toggleBtn.getAttribute('data-i18n-key')).toBe('action_show');
   });
 
   it('render 重新填充文案', async () => {
