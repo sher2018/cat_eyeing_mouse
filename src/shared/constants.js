@@ -47,6 +47,19 @@ const SPRITE_COLS = 3;
 const SPRITE_ROWS = 3;
 const CSS_FRAME_CLASS_PREFIX = 'move-sprite-';
 
+/** 眨眼雪碧图（与 move_sprite 同 3x3 布局，眼睛闭合态） */
+const BLINK_SPRITE_PATH = 'res/spine/blink_sprite.png';
+/** 休息态闭眼图（与 sit_back 同尺寸，rest 阶段眨眼叠加） */
+const BLINK_REST_PATH = 'res/rest/sit_back/blink_sit_back.png';
+/** 单次眨眼总时长（0.5–1s 区间默认 600ms，缓慢眨眼） */
+const BLINK_DURATION_MS = 600;
+/** 眨眼间隔随机抖动区间（3–5s，避免机械节拍感） */
+const BLINK_INTERVAL_MIN_MS = 3000;
+const BLINK_INTERVAL_MAX_MS = 5000;
+/** 眨眼图层与播放态 class */
+const BLINK_LAYER_CLASS = 'cem-blink-layer';
+const BLINK_PLAY_CLASS = 'cem-blinking';
+
 /** 过渡帧目录（构建期生成产物） */
 const TRANSITION_FRAME_DIR = 'res/move/transitions';
 
@@ -103,6 +116,8 @@ const LOCALE_MAP = Object.freeze({
 const OVERLAY_Z_INDEX = 2147483647;
 const OVERLAY_DEFAULT_EDGE_GAP_PX = 8;
 const OVERLAY_BG_TRANSPARENT = true;
+/** 显隐切换淡入淡出时长（平滑过渡） */
+const OVERLAY_FADE_MS = 180;
 
 /** 拖拽配置（FR-002） */
 const DRAG_MOVE_THRESHOLD_PX = 3;
@@ -111,7 +126,6 @@ const DRAG_EDGE_MARGIN_PX = 0;
 /** 消息协议类型（M-15 ServiceWorker） */
 const MSG_TYPES = Object.freeze({
   TOGGLE_VISIBLE: 'TOGGLE_VISIBLE',
-  SET_CLAMP: 'SET_CLAMP',
   SETTINGS_UPDATED: 'SETTINGS_UPDATED',
   ACK: 'ACK'
 });
@@ -127,6 +141,13 @@ export {
   SPRITE_COLS,
   SPRITE_ROWS,
   CSS_FRAME_CLASS_PREFIX,
+  BLINK_SPRITE_PATH,
+  BLINK_REST_PATH,
+  BLINK_DURATION_MS,
+  BLINK_INTERVAL_MIN_MS,
+  BLINK_INTERVAL_MAX_MS,
+  BLINK_LAYER_CLASS,
+  BLINK_PLAY_CLASS,
   TRANSITION_FRAME_DIR,
   SECTOR_BANDS,
   IDLE_THRESHOLD_MS,
@@ -143,6 +164,7 @@ export {
   OVERLAY_Z_INDEX,
   OVERLAY_DEFAULT_EDGE_GAP_PX,
   OVERLAY_BG_TRANSPARENT,
+  OVERLAY_FADE_MS,
   DRAG_MOVE_THRESHOLD_PX,
   DRAG_EDGE_MARGIN_PX,
   MSG_TYPES

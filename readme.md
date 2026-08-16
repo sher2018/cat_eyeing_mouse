@@ -7,7 +7,7 @@
 - 🐱 **8方向姿态跟踪** — 根据鼠标相对猫咪中心位置，实时切换8个朝向 + 中心hover态
 - 🎬 **Canvas平滑过渡** — 基于 crossfade（交叉淡入淡出）实现姿态切换动画，无硬切跳变
 - 🖱️ **可拖拽停靠** — 按住猫咪拖动到任意位置，位置持久化存储于 `chrome.storage.local`
-- 💤 **智能休息态** — 鼠标静止8秒后自动进入休息态，唤醒平滑过渡
+- 💤 **智能休息态** — 鼠标静止10秒后自动进入休息态，唤醒平滑过渡
 - 🌍 **双语i18n** — 中英文自动适配，遵循WebExtension标准规范
 - 🔒 **零隐私风险** — 纯前端实现，无网络请求、无数据上报
 - 🎯 **Chrome/Edge双端支持** — 同一Manifest V3包同时支持Chrome和Edge浏览器
@@ -19,7 +19,12 @@
 ```
 cat_eyeing_mouse/
 ├── manifest.json                          # Manifest V3 清单（Chrome/Edge 共用）
+├── package.json                           # 构建/测试脚本（esbuild + vitest）
 ├── LICENSE                                # 开源协议
+│
+├── _locales/                              # i18n 语言包（WebExtension 标准，须位于扩展根目录）
+│   ├── en/messages.json                   #   英文文案（默认回退）
+│   └── zh_CN/messages.json                #   中文文案
 │
 ├── doc/                                   # 设计文档
 │   ├── 0.requirements_document.md         # 产品需求文档 (PRD)
@@ -27,11 +32,7 @@ cat_eyeing_mouse/
 │   ├── 2.detailed_design_specification.md # 详细设计规格说明书
 │   └── 3.detailed_test_cases.md           # 测试用例文档
 │
-├── src/                                   # 源代码目录（ES Modules）
-│   ├── _locales/                          # i18n 语言包（WebExtension 标准）
-│   │   ├── en/messages.json               #   英文文案（默认回退）
-│   │   └── zh_CN/messages.json            #   中文文案
-│   │
+├── src/                                   # 源代码目录（ES Modules，经 esbuild 打包）
 │   ├── adapter/                           # 浏览器适配层（L5）
 │   │   ├── browser-adapter.js             #   M-01 chrome.*/browser.* 命名空间统一封装
 │   │   ├── storage-service.js             #   M-02 chrome.storage.local Promise化封装
@@ -40,7 +41,7 @@ cat_eyeing_mouse/
 │   │   └── __tests__/                     #   适配层单元测试
 │   │
 │   ├── content/                           # Content Script（悬浮层主逻辑）
-│   │   ├── content-main.js                #   M-13入口：装配各模块 + 消息监听
+│   │   ├── content-main.js                #   M-13入口：装配各模块 + 消息监听（esbuild 构建入口）
 │   │   ├── overlay-container.js           #   M-13 Shadow DOM 悬浮容器注入
 │   │   ├── pose-state-machine.js          #   M-07 8扇区姿态状态机
 │   │   ├── canvas-stage.js                #   M-09 Canvas 2D 绘制 + rAF + visibility暂停
@@ -71,13 +72,16 @@ cat_eyeing_mouse/
 │   ├── move/                              # 8方向+中心姿态帧
 │   │   ├── 0.png ~ 8.png                  # 0=center(hover), 1=NE, 2=E, 3=SE,
 │   │   │                                  # 4=S, 5=SW, 6=W, 7=NW, 8=N
-│   │   └── transitions/                   # 过渡帧序列（预留目录）
+│   │   └── left/                          # 朝左序列帧素材（1_left.png ~ 10_left.png）
 │   ├── rest/sit_back/sit_back.png         # 休息态素材
-│   ├── spine/                             # 精灵图资源（可选备用方案）
+│   ├── spine/                             # 精灵图资源（move_sprite.png / move_sprite.css）
 │   └── icons/
 │       ├── icon16.png                     # 扩展图标 16x16
 │       ├── icon48.png                     # 扩展图标 48x48
 │       └── icon128.png                    # 扩展图标 128x128
+│
+├── dist/                                  # 构建产物（npm run build 生成，勿手工编辑）
+│   └── content.js                         # Content Script 打包产物（manifest 引用）
 │
 └── src/test/                              # 测试占位目录
 ```
@@ -96,10 +100,12 @@ cat_eyeing_mouse/
 | `name` / `description` | `__MSG_app_name__` / `__MSG_app_description__` | 通过 i18n 占位符引用语言包 |
 | `default_locale` | `"en"` | i18n 默认回退语言 |
 | `background.service_worker` | `"src/background/service-worker.js"` | Service Worker 入口（`"type": "module"`） |
-| `content_scripts.js` | `["src/content/content-main.js"]` | 匹配 `<all_urls>`，`document_idle` 注入 |
-| `permissions` | `["storage"]` | 仅存储权限，最小权限原则 |
+| `content_scripts.js` | `["dist/content.js"]` | 匹配 `<all_urls>`，`document_idle` 注入；指向 esbuild 打包产物 |
+| `permissions` | `["storage", "tabs"]` | 存储权限 + 标签页广播权限 |
 | `web_accessible_resources` | `res/**` + `<all_urls>` | Content Script 可访问静态资源 |
 | `action.default_popup` | `"src/popup/popup.html"` | Popup 页面 |
+
+> 注意：`dist/content.js` 由 `npm run build` 生成（详见下方[本地开发验证流程](#本地开发验证流程)），加载扩展前必须先构建。
 
 ### 2. 核心常量配置
 
@@ -108,7 +114,7 @@ cat_eyeing_mouse/
 | 常量 | 值 | 说明 |
 |------|-----|------|
 | `SectorId` | `0=CENTER, 1=NE, 2=E, 3=SE, 4=S, 5=SW, 6=W, 7=NW, 8=N` | 扇区枚举 |
-| `IDLE_THRESHOLD_MS` | `8000` | 休息态触发阈值（8秒） |
+| `IDLE_THRESHOLD_MS` | `10000` | 休息态触发阈值（10秒） |
 | `WAKE_DEBOUNCE_MS` | `120` | 唤醒防抖时间 |
 | `TRANSITION_THROTTLE_MS` | `60` | 过渡最小间隔（节流） |
 | `TRANSITION_DURATION_MS` | `120` | 单次 crossfade 过渡时长 |
@@ -141,7 +147,7 @@ cat_eyeing_mouse/
 
 ### 4. i18n 语言包配置
 
-语言包位于 [src/_locales/](file:///d:/desktop/proj/9.cat_mouse/cat_eyeing_mouse/src/_locales)：
+语言包位于 [_locales/](file:///d:/desktop/proj/9.cat_mouse/cat_eyeing_mouse/_locales)（扩展根目录，WebExtension 标准要求位置）：
 
 | key | en | zh_CN |
 |-----|-----|--------|
@@ -162,7 +168,7 @@ cat_eyeing_mouse/
 
 | 模块 | 文件 | 核心接口 | 说明 |
 |------|------|----------|------|
-| BrowserAdapter | [browser-adapter.js](file:///d:/desktop/proj/9.cat_mouse/cat_eyeing_mouse/src/adapter/browser-adapter.js) | `runtime()` / `storage()` / `i18n()` / `isEdge()` / `isChrome()` | 优先 `chrome.*`，回退 `browser.*`；回调式 API Promise 化 |
+| BrowserAdapter | [browser-adapter.js](file:///d:/desktop/proj/9.cat_mouse/cat_eyeing_mouse/src/adapter/browser-adapter.js) | 单例 `browserAdapter`：`runtime()` / `storage()` / `tabs()` / `i18n()` / `isEdge()` / `isChrome()` / `getEnvironment()` | 优先 `chrome.*`，回退 `browser.*`；回调式 API Promise 化 |
 | StorageService | [storage-service.js](file:///d:/desktop/proj/9.cat_mouse/cat_eyeing_mouse/src/adapter/storage-service.js) | `getPosition()` / `setPosition(pos)` / `getSettings()` / `setSettings(s)` | 返回 `Result<T>`，永不抛异常；深度合并设置 |
 | I18nService | [i18n-service.js](file:///d:/desktop/proj/9.cat_mouse/cat_eyeing_mouse/src/adapter/i18n-service.js) | `t(key)` / `getLocale()` / `bulk(keys)` | key 缺失返回 key 本身并记 WARN |
 | ResourceLoader | [resource-loader.js](file:///d:/desktop/proj/9.cat_mouse/cat_eyeing_mouse/src/adapter/resource-loader.js) | `getUrl(relPath)` / `preload(frames)` / `get(sector)` / `getFallback()` | 通过 `runtime.getURL()` 解析路径；加载失败回退透明1x1 PNG |
@@ -221,18 +227,35 @@ cat_eyeing_mouse/
 
 ### 环境准备
 
+- **Node.js ≥ 18 + npm：** 必需（用于构建打包产物与运行单元测试）
 - **浏览器：** Google Chrome ≥ 88 或 Microsoft Edge ≥ 88（支持 Manifest V3）
-- **Node.js（可选）：** 仅运行单元测试时需要
 
-### 步骤1：Chrome 加载已解压扩展
+### 步骤1：安装依赖并构建
+
+> Manifest 中 Content Script 指向打包产物 `dist/content.js`，**加载扩展前必须先构建**，否则扩展加载后无法向页面注入悬浮层。
+
+```powershell
+# 安装依赖（esbuild / vitest / jsdom）
+npm install
+
+# 构建：src/content/content-main.js → dist/content.js（IIFE 单文件，约 68KB）
+npm run build
+
+# 开发期监听模式：改动 src 后自动重新打包
+npm run build:watch
+```
+
+构建成功输出示例：`dist\content.js  68.2kb  Done`
+
+### 步骤2：Chrome 加载已解压扩展
 
 1. 打开 Chrome，地址栏输入 `chrome://extensions/`
 2. 开启右上角 **开发者模式**
 3. 点击 **加载已解压的扩展程序**
 4. 选择项目根目录 `cat_eyeing_mouse/`（包含 `manifest.json`）
-5. 确认扩展卡片出现且无错误提示
+5. 确认扩展卡片出现且无 **错误** 提示（若报文件加载失败，优先检查 `dist/content.js` 是否已构建）
 
-### 步骤2：Edge 加载已解压扩展
+### 步骤3：Edge 加载已解压扩展
 
 1. 打开 Edge，地址栏输入 `edge://extensions/`
 2. 开启左下角 **开发人员模式**
@@ -240,7 +263,7 @@ cat_eyeing_mouse/
 4. 选择项目根目录 `cat_eyeing_mouse/`
 5. 确认扩展加载成功
 
-### 步骤3：功能验证清单
+### 步骤4：功能验证清单
 
 刷新任意网页（如 `https://example.com`）进行验证：
 
@@ -254,7 +277,7 @@ cat_eyeing_mouse/
 | 拖拽功能 | 按住猫咪平滑拖动（3px阈值），松手位置保持 | DragController |
 | 位置持久化 | 刷新页面后猫咪回到上次拖拽位置 | StorageService (`cem.position`) |
 | 越界回收 | 窗口缩放时记忆坐标越界自动回收到边缘 | DragController.clampPosition |
-| 休息态 | 鼠标静止8秒后进入休息态 | IdleDetector |
+| 休息态 | 鼠标静止10秒后进入休息态 | IdleDetector |
 | 唤醒 | 移动鼠标时从休息态唤醒（120ms防抖） | IdleDetector |
 | Popup开关 | 点击工具栏图标，Popup 显示显隐按钮和边界约束开关 | PopupView |
 | 显隐切换 | 隐藏后悬浮层完全移除，再次显示恢复位置 | ToggleController |
@@ -265,10 +288,10 @@ cat_eyeing_mouse/
 | 高分屏适配 | 在 2K/4K 屏幕上 Canvas 不模糊（DPR上限3） | CanvasStage.resolveDpr |
 | 页面隐藏暂停 | 切换标签页后 rAF 暂停 | CanvasStage.visibilitychange |
 
-### 步骤4：调试技巧
+### 步骤5：调试技巧
 
 **Content Script 调试：**
-- 目标页面按 F12 → Sources → Content scripts → 找到扩展源文件打断点
+- 目标页面按 F12 → Sources → Content scripts → 在 `dist/content.js`（esbuild 打包产物，单 IIFE 文件）中查找模块名并打断点
 
 **Service Worker 调试：**
 - `chrome://extensions/` → 点击扩展卡片的 "Service Worker" 链接
@@ -283,15 +306,21 @@ cat_eyeing_mouse/
 - 所有模块通过 `createLogger('Module')` 输出分级日志，格式：`[LEVEL][Module][Event] context`
 - 可通过 `logger.setLevel('debug')` 调整最低输出级别
 
-### 步骤5：运行单元测试
+### 步骤6：运行单元测试
+
+```powershell
+npm test              # 单次运行（vitest）
+npm run test:watch    # 监听模式
+```
 
 项目在各模块下包含 `__tests__/` 目录，覆盖适配层、核心逻辑层、Popup、Service Worker。
 
-### 步骤6：修改代码后的热重载
+### 步骤7：修改代码后的更新流程
 
-1. 打开 `chrome://extensions/` 或 `edge://extensions/`
-2. 点击扩展卡片上的 **刷新** 按钮（圆形箭头）
-3. 刷新测试页面即可看到更新
+1. 修改 `src/` 下源码
+2. 重新构建：`npm run build`（或保持 `npm run build:watch` 常开自动重打包）
+3. 打开 `chrome://extensions/` 或 `edge://extensions/`，点击扩展卡片上的 **刷新** 按钮（圆形箭头）
+4. 刷新测试页面即可看到更新
 
 ---
 
@@ -300,7 +329,8 @@ cat_eyeing_mouse/
 ### 前置检查清单
 
 - [ ] `manifest.json` 配置符合 MV3 规范，无语法错误
-- [ ] `permissions` 仅声明 `storage`，无过度权限
+- [ ] 已执行 `npm run build`，`dist/content.js` 为最新构建产物
+- [ ] `permissions` 仅声明 `storage` 与 `tabs`，无过度权限
 - [ ] icons 三尺寸齐备（16/48/128）且清晰
 - [ ] `_locales/en` 和 `_locales/zh_CN` 文案完整，无硬编码字符串
 - [ ] 所有资源路径通过 `chrome.runtime.getURL()` 加载
@@ -312,11 +342,15 @@ cat_eyeing_mouse/
 
 ### 打包ZIP
 
+**前置：** 先执行 `npm install && npm run build` 确保生成 `dist/content.js`。
+
 **打包文件（仅包含以下内容）：**
 ```
 manifest.json
-src/**/*（所有源码文件）
+_locales/**/*（i18n 语言包，缺失会导致扩展名解析失败）
+src/**/*（Popup / Service Worker 等源码文件）
 res/**/*（所有资源文件）
+dist/content.js（Content Script 打包产物）
 ```
 
 **排除文件（不要打入ZIP）：**
@@ -325,16 +359,17 @@ res/**/*（所有资源文件）
 - `node_modules/`
 - `.gitignore` / `.git/`
 - `readme.md`
+- `package.json` / `package-lock.json`（构建脚本，运行时不需要）
 - `LICENSE`（可选）
 
 **PowerShell 打包命令：**
 ```powershell
-Compress-Archive -Path manifest.json, src, res -DestinationPath release/cat-eyeing-mouse-v1.0.0.zip -Force
+Compress-Archive -Path manifest.json, _locales, src, res, dist -DestinationPath release/cat-eyeing-mouse-v1.0.0.zip -Force
 ```
 
 **验证ZIP：**
 - 解压后根目录直接可见 `manifest.json`，无嵌套目录
-- `src/` 和 `res/` 目录结构完整
+- `_locales/`、`src/`、`res/`、`dist/` 目录结构完整
 - ZIP 大小 ≤ 2MB
 
 ### Chrome Web Store 发布

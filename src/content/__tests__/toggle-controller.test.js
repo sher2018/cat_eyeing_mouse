@@ -36,6 +36,41 @@ describe('ToggleController', () => {
     expect(overlay.unmount).toHaveBeenCalledTimes(1);
   });
 
+  it('容器支持 fadeOut 时先淡出、延迟卸载', () => {
+    vi.useFakeTimers();
+    const overlay = createOverlayStub();
+    overlay.fadeOut = vi.fn();
+    const ctrl = createToggleController({ overlayContainer: overlay });
+    ctrl.hide();
+    expect(overlay.fadeOut).toHaveBeenCalledTimes(1);
+    expect(overlay.unmount).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(180);
+    expect(overlay.unmount).toHaveBeenCalledTimes(1);
+    vi.useRealTimers();
+  });
+
+  it('淡出等待期间 show 恢复可见 → 放弃挂起的卸载', () => {
+    vi.useFakeTimers();
+    const overlay = createOverlayStub();
+    overlay.fadeOut = vi.fn();
+    const ctrl = createToggleController({ overlayContainer: overlay });
+    ctrl.hide();
+    ctrl.show();
+    vi.advanceTimersByTime(180);
+    expect(overlay.unmount).not.toHaveBeenCalled();
+    expect(overlay.mount).toHaveBeenCalledTimes(1);
+    vi.useRealTimers();
+  });
+
+  it('fadeOut 抛错时跳过过渡直接卸载', () => {
+    const overlay = createOverlayStub();
+    overlay.fadeOut = vi.fn(() => { throw new Error('fade boom'); });
+    const ctrl = createToggleController({ overlayContainer: overlay });
+    expect(() => ctrl.hide()).not.toThrow();
+    expect(ctrl.isVisible()).toBe(false);
+    expect(overlay.unmount).toHaveBeenCalledTimes(1);
+  });
+
   it('show 后 isVisible=true 且触发 overlayContainer.mount', () => {
     const overlay = createOverlayStub();
     const ctrl = createToggleController({ overlayContainer: overlay, initialVisible: false });
@@ -44,20 +79,21 @@ describe('ToggleController', () => {
     expect(overlay.mount).toHaveBeenCalledTimes(1);
   });
 
-  it('hide 写回 settings hidden=true', async () => {
+  it('hide/show 不写 storage（SW 为 hidden 唯一写者，消除双写竞态）', () => {
     const storage = createStorageStub(false);
-    const ctrl = createToggleController({ overlayContainer: createOverlayStub(), storageService: storage });
+    const ctrl = createToggleController({ overlayContainer: createOverlayStub() });
     ctrl.hide();
-    await Promise.resolve();
-    expect(storage.setSettings).toHaveBeenCalledWith({ hidden: true });
+    ctrl.show();
+    expect(storage.setSettings).not.toHaveBeenCalled();
   });
 
-  it('show 写回 settings hidden=false', async () => {
-    const storage = createStorageStub(true);
-    const ctrl = createToggleController({ overlayContainer: createOverlayStub(), storageService: storage, initialVisible: false });
+  it('不依赖 storageService：不传也可正常切换', () => {
+    const overlay = createOverlayStub();
+    const ctrl = createToggleController({ overlayContainer: overlay, initialVisible: false });
     ctrl.show();
-    await Promise.resolve();
-    expect(storage.setSettings).toHaveBeenCalledWith({ hidden: false });
+    ctrl.hide();
+    expect(overlay.mount).toHaveBeenCalledTimes(1);
+    expect(overlay.unmount).toHaveBeenCalledTimes(1);
   });
 
   it('toggle 在可见/隐藏间翻转', () => {
@@ -121,31 +157,6 @@ describe('ToggleController', () => {
     const ctrl = createToggleController({ overlayContainer: overlay });
     ctrl.hide();
     expect(parent.removeChild).toHaveBeenCalledWith(host);
-  });
-
-  it('storage.setSettings 抛错时不影响状态切换', async () => {
-    const storage = createStorageStub(false);
-    storage.setSettings.mockRejectedValue(new Error('storage down'));
-    const ctrl = createToggleController({ overlayContainer: createOverlayStub(), storageService: storage });
-    expect(() => ctrl.hide()).not.toThrow();
-    expect(ctrl.isVisible()).toBe(false);
-  });
-
-  it('异步从 storage 同步初始可见性', async () => {
-    const storage = createStorageStub(true); // hidden=true
-    const ctrl = createToggleController({ overlayContainer: createOverlayStub(), storageService: storage });
-    await Promise.resolve();
-    await Promise.resolve();
-    expect(ctrl.isVisible()).toBe(false);
-  });
-
-  it('storage.getSettings 失败时保持构造初始值', async () => {
-    const storage = createStorageStub(false);
-    storage.getSettings.mockResolvedValue({ ok: false, error: { code: 'X' } });
-    const ctrl = createToggleController({ overlayContainer: createOverlayStub(), storageService: storage });
-    await Promise.resolve();
-    await Promise.resolve();
-    expect(ctrl.isVisible()).toBe(true);
   });
 
   it('ERROR_CODES 导出 UNMOUNT_FAIL', () => {

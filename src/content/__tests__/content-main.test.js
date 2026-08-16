@@ -43,7 +43,6 @@ const mockOverlay = {
   setPointerEvents: vi.fn(),
   getCanvasStage: vi.fn(() => mockCanvasStage),
   getPoseMachine: vi.fn(() => mockPoseMachine),
-  setClamp: vi.fn(),
   getHost: vi.fn(() => null)
 };
 
@@ -127,7 +126,7 @@ vi.mock('../drag-controller.js', () => ({
   }))
 }));
 
-import { createApp } from '../content-main.js';
+import { createApp, createLifetimeWatchdog } from '../content-main.js';
 
 describe('ContentMain (M-18)', () => {
   let app;
@@ -171,13 +170,6 @@ describe('ContentMain (M-18)', () => {
     expect(mockToggle.toggle).toHaveBeenCalledTimes(1);
   });
 
-  it('onMessage(SET_CLAMP) → overlay.setClamp 被调用', async () => {
-    const app = createApp();
-    await app.bootstrap();
-    app.onMessage({ type: 'SET_CLAMP', clamp: true });
-    expect(mockOverlay.setClamp).toHaveBeenCalledWith(true);
-  });
-
   it('越界绑定：bootstrap 后注册 document mouseleave/mouseenter', async () => {
     const addSpy = vi.spyOn(document, 'addEventListener');
     await app.bootstrap();
@@ -215,5 +207,140 @@ describe('ContentMain (M-18)', () => {
     expect(removeSpy).toHaveBeenCalledWith('mouseleave', expect.any(Function));
     expect(removeSpy).toHaveBeenCalledWith('mouseenter', expect.any(Function));
     removeSpy.mockRestore();
+  });
+
+  it('mount 抛错时 bootstrap 不中断，toggle 仍创建且按钮链路可用', async () => {
+    mockOverlay.mount.mockImplementation(() => { throw new Error('mount boom'); });
+    const app = createApp();
+    await expect(app.bootstrap()).resolves.toBeUndefined();
+    expect(mockToggle.toggle).not.toHaveBeenCalled();
+    app.onMessage({ type: 'TOGGLE_VISIBLE' });
+    expect(mockToggle.toggle).toHaveBeenCalledTimes(1);
+    mockOverlay.mount.mockReset();
+  });
+
+  it('mount 抛错时 onVisibilityChange(true) 回调不丢失（show 路径仍走 afterMount）', async () => {
+    let visCb = null;
+    mockToggle.onVisibilityChange.mockImplementation((cb) => { visCb = cb; return () => {}; });
+    const app = createApp();
+    await app.bootstrap();
+    expect(typeof visCb).toBe('function');
+    visCb(true); // 模拟 show
+    expect(mockIdle.start).toHaveBeenCalled();
+    mockToggle.onVisibilityChange.mockReset();
+  });
+
+  it('重复 afterMount 不叠加 mouseleave 监听（先解绑再绑定）', async () => {
+    let visCb = null;
+    mockToggle.onVisibilityChange.mockImplementation((cb) => { visCb = cb; return () => {}; });
+    const addSpy = vi.spyOn(document, 'addEventListener');
+    const removeSpy = vi.spyOn(document, 'removeEventListener');
+    const app = createApp();
+    await app.bootstrap();
+    const addsAfterBootstrap = addSpy.mock.calls.filter((c) => c[0] === 'mouseleave').length;
+    visCb(true); // 模拟再次 show → afterMount 重绑
+    expect(removeSpy).toHaveBeenCalledWith('mouseleave', expect.any(Function));
+    const addsAfterShow = addSpy.mock.calls.filter((c) => c[0] === 'mouseleave').length;
+    expect(addsAfterShow - addsAfterBootstrap).toBe(1); // 仅新增一组，无叠加
+    addSpy.mockRestore();
+    removeSpy.mockRestore();
+    mockToggle.onVisibilityChange.mockReset();
+  });
+});
+
+describe('LifetimeWatchdog（卸载残留清理）', () => {
+  /** 手动挡定时器：可显式触发 tick，避免真实等待。 */
+  function createFakeTimers() {
+    let tickFn = null;
+    let cleared = 0;
+    return {
+      set: vi.fn((fn) => { tickFn = fn; return 1; }),
+      clear: vi.fn(() => { cleared += 1; tickFn = null; }),
+      fire: () => { if (tickFn) tickFn(); },
+      clearedCount: () => cleared
+    };
+  }
+
+  function createNs(id = 'ext-uuid-1') {
+    return { runtime: { id } };
+  }
+
+  it('扩展有效时不触发 onInvalid，且已挂载定时器持续轮询', () => {
+    const timers = createFakeTimers();
+    const onInvalid = vi.fn();
+    createLifetimeWatchdog({ ns: createNs(), onInvalid, timerApi: timers });
+    expect(timers.set).toHaveBeenCalledWith(expect.any(Function), 2000);
+    timers.fire();
+    timers.fire();
+    expect(onInvalid).not.toHaveBeenCalled();
+  });
+
+  it('runtime.id 变 undefined（卸载/禁用）→ 触发一次 onInvalid 并停止轮询', () => {
+    const timers = createFakeTimers();
+    const onInvalid = vi.fn();
+    const ns = createNs();
+    createLifetimeWatchdog({ ns, onInvalid, timerApi: timers });
+    ns.runtime.id = undefined; // 模拟扩展被移除
+    timers.fire();
+    expect(onInvalid).toHaveBeenCalledTimes(1);
+    expect(timers.clear).toHaveBeenCalled();
+    timers.fire = () => { throw new Error('tick 不应再被调度'); };
+    expect(onInvalid).toHaveBeenCalledTimes(1); // 无重复触发
+  });
+
+  it('访问 runtime.id 抛错（上下文失效）→ 视为失效并触发清理', () => {
+    const timers = createFakeTimers();
+    const onInvalid = vi.fn();
+    const ns = { runtime: {} };
+    Object.defineProperty(ns.runtime, 'id', {
+      get() { throw new Error('Extension context invalidated'); }
+    });
+    createLifetimeWatchdog({ ns, onInvalid, timerApi: timers });
+    timers.fire();
+    expect(onInvalid).toHaveBeenCalledTimes(1);
+  });
+
+  it('ns.runtime 整体缺失 → 启动即失效，不挂定时器', () => {
+    const timers = createFakeTimers();
+    const onInvalid = vi.fn();
+    createLifetimeWatchdog({ ns: {}, onInvalid, timerApi: timers });
+    expect(onInvalid).toHaveBeenCalledTimes(1);
+    expect(timers.set).not.toHaveBeenCalled();
+  });
+
+  it('onInvalid 抛错不上抛且定时器已清理', () => {
+    const timers = createFakeTimers();
+    const ns = createNs();
+    const wd = createLifetimeWatchdog({
+      ns,
+      onInvalid: () => { throw new Error('cleanup boom'); },
+      timerApi: timers
+    });
+    ns.runtime.id = undefined;
+    expect(wd.isInvalidated()).toBe(true);
+    expect(() => timers.fire()).not.toThrow();
+    expect(timers.clear).toHaveBeenCalled();
+  });
+
+  it('stop() 后扩展失效也不触发 onInvalid', () => {
+    const timers = createFakeTimers();
+    const onInvalid = vi.fn();
+    const ns = createNs();
+    const wd = createLifetimeWatchdog({ ns, onInvalid, timerApi: timers });
+    wd.stop();
+    ns.runtime.id = undefined;
+    timers.fire();
+    expect(onInvalid).not.toHaveBeenCalled();
+  });
+
+  it('失效时 onInvalid 内调用 app.dispose：overlay.unmount 被执行（端到端）', async () => {
+    const timers = createFakeTimers();
+    const app = createApp();
+    await app.bootstrap();
+    const ns = createNs();
+    createLifetimeWatchdog({ ns, onInvalid: () => app.dispose(), timerApi: timers });
+    ns.runtime.id = undefined;
+    timers.fire();
+    expect(mockOverlay.unmount).toHaveBeenCalled();
   });
 });

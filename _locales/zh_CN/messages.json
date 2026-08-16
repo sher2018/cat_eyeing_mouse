@@ -1,6 +1,6 @@
 {
   "app_name": {
-    "message": "猫盯鼠",
+    "message": "猫盯鼠标",
     "description": "扩展在工具栏与 Popup 标题中显示的名称。"
   },
   "app_description": {
@@ -18,10 +18,6 @@
   "action_clamp_viewport": {
     "message": "边界约束",
     "description": "控制是否将猫咪限制在视口内的开关文字。"
-  },
-  "tip_drag_to_move": {
-    "message": "拖动移动",
-    "description": "提示用户可以拖动猫咪的说明文字。"
   },
   "status_resting": {
     "message": "休息中",

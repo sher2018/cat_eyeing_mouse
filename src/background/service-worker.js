@@ -4,6 +4,8 @@
 
 import { createLogger } from '../shared/logger.js';
 import { MSG_TYPES, DEFAULT_SETTINGS } from '../shared/constants.js';
+import { browserAdapter } from '../adapter/browser-adapter.js';
+import { createStorageService } from '../adapter/storage-service.js';
 
 const log = createLogger('ServiceWorker');
 
@@ -49,12 +51,6 @@ async function flipHidden(storageService) {
   await writeSettings(storageService, Object.assign({}, settings, { hidden: !settings.hidden }));
 }
 
-/** 写入 clampToViewport 并写回。 */
-async function applyClamp(storageService, clamp) {
-  const settings = await readSettings(storageService);
-  await writeSettings(storageService, Object.assign({}, settings, { clampToViewport: !!clamp }));
-}
-
 /** 广播给所有 Content：优先遍历 tabs，回退 runtime.sendMessage。 */
 async function broadcast(adapter, message) {
   if (!adapter) return;
@@ -85,10 +81,10 @@ async function broadcastViaTabs(adapter, message) {
 
 /**
  * 装配 Service Worker：注册 onMessage 监听并返回可测试的 handler/broadcast。
- * @param {{adapter?:object, storageService?:object}} [deps]
+ * @param {{adapter?:object, storageService?:object, autoRegister?:boolean}} [deps]
  * @returns {object} 冻结的 { handler, broadcast, dispose }
  */
-function setupServiceWorker({ adapter, storageService } = {}) {
+function setupServiceWorker({ adapter, storageService, autoRegister = true } = {}) {
   async function handler(message) {
     const type = message && typeof message === 'object' ? message.type : null;
     if (!isKnownType(type, CONFIG.MSG_WHITELIST)) {
@@ -105,16 +101,12 @@ function setupServiceWorker({ adapter, storageService } = {}) {
       await broadcast(adapter, { type: MSG_TYPES.TOGGLE_VISIBLE });
       return;
     }
-    if (type === MSG_TYPES.SET_CLAMP) {
-      await applyClamp(storageService, message.clamp);
-      await broadcast(adapter, { type: MSG_TYPES.SET_CLAMP, clamp: !!message.clamp });
-      return;
-    }
     await broadcast(adapter, { type });
   }
 
   let dispose = () => {};
-  if (adapter && typeof adapter.runtime === 'function') {
+  // autoRegister=false 时跳过注册：浏览器入口已有顶层转发监听器，重复注册会导致同一条消息被处理两次
+  if (autoRegister && adapter && typeof adapter.runtime === 'function') {
     try {
       dispose = adapter.runtime().onMessage(handler) || dispose;
     } catch (e) {
@@ -136,41 +128,30 @@ function hasExtensionRuntime() {
   return !!(ns && ns.runtime && typeof ns.runtime.onMessage === 'object');
 }
 
-let bootPromise = null;
-
-/** 惰性装配依赖（首次消息到达时触发，避免阻塞顶层监听器同步注册）。 */
-function ensureBooted() {
-  if (!bootPromise) {
-    bootPromise = (async () => {
-      const [{ browserAdapter }, storageMod] = await Promise.all([
-        import('../adapter/browser-adapter.js'),
-        import('../adapter/storage-service.js').catch(() => ({}))
-      ]);
-      const storageService = storageMod && typeof storageMod.createStorageService === 'function'
-        ? storageMod.createStorageService(browserAdapter)
-        : undefined;
-      const sw = setupServiceWorker({ adapter: browserAdapter, storageService, autoRegister: false });
-      log.info('installed', { reason: 'runtime_detected' });
-      return sw;
-    })();
-  }
-  return bootPromise;
-}
-
-// 浏览器入口：顶层同步注册 onMessage（MV3 要求），消息到达后惰性装配依赖并分发。
+// 浏览器入口：顶层同步注册 onMessage（MV3 要求）。
+// 依赖经顶层静态导入装配——SW 全局作用域禁止动态 import()（HTML 规范，Chrome/Edge 抛
+// "import() is disallowed on ServiceWorkerGlobalScope"），此前惰性 import() 导致 handler 从未执行。
 if (hasExtensionRuntime()) {
   const ns = globalThis.chrome || globalThis.browser;
+  let dispatch = null;
+  try {
+    const storageService = createStorageService(browserAdapter);
+    const sw = setupServiceWorker({ adapter: browserAdapter, storageService, autoRegister: false });
+    dispatch = (message) => sw.handler(message);
+    log.info('installed', { reason: 'runtime_detected' });
+  } catch (e) {
+    log.warn('boot_failed', { msg: e && e.message ? e.message : String(e) });
+  }
   ns.runtime.onMessage.addListener((message, sender, sendResponse) => {
-    void ensureBooted()
-      .then((sw) => {
-        try { void sw.handler(message); } catch (e) {
-          log.warn('handler_error', { msg: e && e.message ? e.message : String(e) });
-        }
-      })
+    // 立即 ACK 并关闭通道：分发为异步即发即忘，不回传结果；
+    // 若 return true 却永不响应，发送方（popup）的 Promise 将永不 settle 或报 port closed
+    try { sendResponse({ ok: true }); } catch (_) { /* 发送方已销毁时通道关闭，忽略 */ }
+    if (!dispatch) return;
+    void Promise.resolve()
+      .then(() => dispatch(message))
       .catch((e) => {
-        log.warn('bootstrap_failed', { msg: e && e.message ? e.message : String(e) });
+        log.warn('handler_error', { msg: e && e.message ? e.message : String(e) });
       });
-    return true;
   });
   log.info('listener_registered', {});
 }

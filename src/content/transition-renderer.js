@@ -175,7 +175,8 @@ function createCanvasTransitionRenderer({ canvasStage = null, resourceLoader = n
 
     // Crossfade / Frames 模式（备选）
     const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
-    if (now - internals.lastPlayAt < CONFIG.THROTTLE_MS) {
+    // 仅在过渡进行中才节流合并；空闲时直接播放，避免 pendingTarget 无人消费导致姿态卡死
+    if (internals.state === STATE.PLAYING && now - internals.lastPlayAt < CONFIG.THROTTLE_MS) {
       internals.pendingTarget = target;
       log.info('throttled_merge', { target });
       return;

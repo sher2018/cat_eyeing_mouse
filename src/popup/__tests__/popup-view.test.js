@@ -27,19 +27,13 @@ function createDomStub() {
 
   const toggleBtn = makeEl('btn-toggle', { tagName: 'button', textContent: 'Show' });
   toggleBtn.setAttribute('data-i18n-key', 'action_show');
-  const clampInput = makeEl('btn-clamp', { tagName: 'input', checked: true });
   const titleEl = makeEl('popup-title', { textContent: 'Cat Eyeing Mouse' });
   titleEl.setAttribute('data-i18n-key', 'app_name');
-  const tipEl = makeEl('tip', { textContent: 'Drag to move' });
-  tipEl.setAttribute('data-i18n-key', 'tip_drag_to_move');
-  const clampLabel = makeEl('clamp-label', { textContent: 'Clamp' });
-  clampLabel.setAttribute('data-i18n-key', 'action_clamp_viewport');
   const iconEl = makeEl('icon');
   iconEl.className = 'cem-popup__icon';
 
   const registry = {
     'btn-toggle': toggleBtn,
-    'btn-clamp': clampInput,
     'popup-title': titleEl
   };
 
@@ -51,7 +45,7 @@ function createDomStub() {
     },
     querySelectorAll: (sel) => {
       if (sel === '[data-i18n-key]') {
-        return [toggleBtn, titleEl, tipEl, clampLabel];
+        return [toggleBtn, titleEl];
       }
       return [];
     },
@@ -60,7 +54,7 @@ function createDomStub() {
     removeEventListener() {}
   };
 
-  return { documentStub, toggleBtn, clampInput, titleEl, tipEl, clampLabel, iconEl };
+  return { documentStub, toggleBtn, titleEl, iconEl };
 }
 
 function createI18nStub(copy, locale = 'en') {
@@ -102,11 +96,10 @@ describe('PopupView', () => {
   it('init 后填充当前语言文案到 data-i18n-key 元素', async () => {
     const dom = createDomStub();
     globalThis.document = dom.documentStub;
-    const copy = { app_name: 'Cat', action_show: 'Show', action_hide: 'Hide', action_clamp_viewport: 'Clamp', tip_drag_to_move: 'Drag' };
+    const copy = { app_name: 'Cat', action_show: 'Show', action_hide: 'Hide' };
     const view = createPopupView({ i18nService: createI18nStub(copy), adapter: createAdapterStub() });
     await view.init();
     expect(dom.titleEl.textContent).toBe('Cat');
-    expect(dom.tipEl.textContent).toBe('Drag');
   });
 
   it('init 后图标背景注入 runtime.getURL', async () => {
@@ -118,13 +111,13 @@ describe('PopupView', () => {
     expect(dom.iconEl.style.backgroundImage).toContain('chrome-extension://abc/');
   });
 
-  it('读取 storage 同步 clamp 开关状态', async () => {
+  it('读取 storage 同步开关状态', async () => {
     const dom = createDomStub();
     globalThis.document = dom.documentStub;
-    const adapter = createAdapterStub({ settings: { hidden: false, clampToViewport: false, locale: 'en' } });
+    const adapter = createAdapterStub({ settings: { hidden: false, clampToViewport: true, locale: 'en' } });
     const view = createPopupView({ i18nService: createI18nStub({}), adapter });
     await view.init();
-    expect(dom.clampInput.checked).toBe(false);
+    expect(dom.toggleBtn.textContent).toBe('action_hide');
   });
 
   it('hidden=true 时 toggle 按钮文案为 action_show', async () => {
@@ -162,27 +155,13 @@ describe('PopupView', () => {
     expect(send).toHaveBeenCalledWith({ type: 'TOGGLE_VISIBLE' });
   });
 
-  it('切换 clamp 触发 onClampChange(checked) 并发送 SET_CLAMP', async () => {
-    const dom = createDomStub();
-    globalThis.document = dom.documentStub;
-    const send = vi.fn(async () => ({ ok: true }));
-    const adapter = createAdapterStub({ sendMessageImpl: send });
-    const onClampChange = vi.fn();
-    const view = createPopupView({ i18nService: createI18nStub({}), adapter, onClampChange });
-    await view.init();
-    dom.clampInput.checked = false;
-    dom.clampInput.fire('change');
-    expect(onClampChange).toHaveBeenCalledWith(false);
-    expect(send).toHaveBeenCalledWith({ type: 'SET_CLAMP', clamp: false });
-  });
-
   it('i18n key 缺失 → 显示 key 本身', async () => {
     const dom = createDomStub();
     globalThis.document = dom.documentStub;
     const i18nNoKey = { t: () => '', getLocale: () => 'en', bulk: () => ({}) };
     const view = createPopupView({ i18nService: i18nNoKey, adapter: createAdapterStub() });
     await view.init();
-    expect(dom.tipEl.textContent).toBe('tip_drag_to_move');
+    expect(dom.titleEl.textContent).toBe('app_name');
   });
 
   it('SW 通信失败 → 按钮保持可用且本地状态乐观翻转', async () => {
@@ -205,7 +184,7 @@ describe('PopupView', () => {
   it('render 重新填充文案', async () => {
     const dom = createDomStub();
     globalThis.document = dom.documentStub;
-    const copy = { app_name: 'Cat', action_show: 'Show', action_hide: 'Hide', action_clamp_viewport: 'Clamp', tip_drag_to_move: 'Drag' };
+    const copy = { app_name: 'Cat', action_show: 'Show', action_hide: 'Hide' };
     const view = createPopupView({ i18nService: createI18nStub(copy), adapter: createAdapterStub() });
     dom.titleEl.textContent = 'TEMP';
     view.render();

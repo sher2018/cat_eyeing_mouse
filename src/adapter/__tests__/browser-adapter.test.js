@@ -7,7 +7,7 @@ function createChromeStub() {
     runtime: {
       getManifest: () => ({ manifest_version: 3 }),
       getURL: (p) => 'chrome-extension://abc/' + p,
-      sendMessage: (_id, m, cb) => cb && cb({ ok: true, echo: m }),
+      sendMessage: (m, cb) => cb && cb({ ok: true, echo: m }),
       onMessage: { addListener: vi.fn(), removeListener: vi.fn() },
       lastError: null
     },
@@ -39,40 +39,52 @@ describe('BrowserAdapter', () => {
   it('chrome 存在时 isChrome 为真', async () => {
     globalThis.chrome = createChromeStub();
     const mod = await import('../browser-adapter.js');
-    expect(mod.isChrome()).toBe(true);
-    expect(mod.getEnvironment().browser).toBe('chrome');
-    expect(mod.getEnvironment().manifestVersion).toBe('3');
+    const adapter = mod.browserAdapter;
+    expect(adapter.isChrome()).toBe(true);
+    expect(adapter.getEnvironment().browser).toBe('chrome');
+    expect(adapter.getEnvironment().manifestVersion).toBe('3');
   });
 
   it('仅 browser 存在时回退成功', async () => {
     globalThis.browser = createChromeStub();
     const mod = await import('../browser-adapter.js');
-    expect(mod.isChrome()).toBe(false);
-    expect(mod.runtime()).toBeDefined();
+    const adapter = mod.browserAdapter;
+    expect(adapter.isChrome()).toBe(false);
+    expect(adapter.runtime()).toBeDefined();
   });
 
   it('两者皆空时 ensureSupported 抛 UNSUPPORTED_ENV', async () => {
     const mod = await import('../browser-adapter.js');
-    expect(() => mod.ensureSupported()).toThrow();
+    expect(() => mod.browserAdapter.ensureSupported()).toThrow();
   });
 
   it('storage.localGet 返回 Promise', async () => {
     globalThis.chrome = createChromeStub();
     globalThis.chrome.storage.local.get = (k, cb) => cb({ foo: 1 });
     const mod = await import('../browser-adapter.js');
-    const result = await mod.storage().localGet('foo');
+    const result = await mod.browserAdapter.storage().localGet('foo');
     expect(result.foo).toBe(1);
   });
 
   it('runtime.getURL 拼接正确', async () => {
     globalThis.chrome = createChromeStub();
     const mod = await import('../browser-adapter.js');
-    expect(mod.runtime().getURL('res/move/1.png')).toContain('res/move/1.png');
+    expect(mod.browserAdapter.runtime().getURL('res/move/1.png')).toContain('res/move/1.png');
+  });
+
+  it('runtime.sendMessage 以消息为首参调用（载荷不丢）', async () => {
+    globalThis.chrome = createChromeStub();
+    const sent = [];
+    globalThis.chrome.runtime.sendMessage = (m, cb) => { sent.push(m); if (cb) cb({ ok: true }); };
+    const mod = await import('../browser-adapter.js');
+    const payload = { type: 'TOGGLE_VISIBLE' };
+    await mod.browserAdapter.runtime().sendMessage(payload);
+    expect(sent).toEqual([payload]);
   });
 
   it('i18n.getUILanguage 回退安全', async () => {
     globalThis.chrome = createChromeStub();
     const mod = await import('../browser-adapter.js');
-    expect(mod.i18n().getUILanguage()).toBe('zh-CN');
+    expect(mod.browserAdapter.i18n().getUILanguage()).toBe('zh-CN');
   });
 });

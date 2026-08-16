@@ -7,13 +7,18 @@ import {
   OVERLAY_Z_INDEX,
   OVERLAY_DEFAULT_EDGE_GAP_PX,
   OVERLAY_BG_TRANSPARENT,
-  DEFAULT_SETTINGS,
+  OVERLAY_FADE_MS,
   ALL_MOVE_FRAMES,
   SectorId,
   SPRITE_PATH,
   SPRITE_FRAME_SIZE,
   SPRITE_COLS,
-  CSS_FRAME_CLASS_PREFIX
+  CSS_FRAME_CLASS_PREFIX,
+  BLINK_SPRITE_PATH,
+  BLINK_REST_PATH,
+  BLINK_DURATION_MS,
+  BLINK_LAYER_CLASS,
+  BLINK_PLAY_CLASS
 } from '../shared/constants.js';
 
 const log = createLogger('OverlayContainer');
@@ -22,6 +27,7 @@ const CONFIG = Object.freeze({
   Z_INDEX: OVERLAY_Z_INDEX,
   DEFAULT_EDGE_GAP_PX: OVERLAY_DEFAULT_EDGE_GAP_PX,
   BG_TRANSPARENT: OVERLAY_BG_TRANSPARENT,
+  FADE_MS: OVERLAY_FADE_MS,
   CAT_SIZE: Object.freeze({ w: 128, h: 128 }),
   SHADOW_MODE: 'open',
   HOST_ID: 'cat-eyeing-mouse-overlay',
@@ -71,12 +77,27 @@ function buildOverlayCss(catSize) {
     const row = Math.floor(i / cols);
     frameCss += `.${CSS_FRAME_CLASS_PREFIX}${i} { background-position: -${col * fs}px -${row * fs}px; }\n`;
   }
+  // 眨眼动画：闭眼 40% ease-in → 保持 17% → 睁眼 43% ease-out（缓慢眨眼时序）
+  const blinkCss = [
+    `.${BLINK_LAYER_CLASS} { position: absolute; left: 0; top: 0; width: ${w}px; height: ${h}px;`,
+    `  background-repeat: no-repeat; opacity: 0; pointer-events: none; }`,
+    `.${BLINK_LAYER_CLASS}.${BLINK_PLAY_CLASS} { animation: cem-blink ${BLINK_DURATION_MS}ms forwards; }`,
+    `@keyframes cem-blink {`,
+    `  0% { opacity: 0; animation-timing-function: cubic-bezier(0.42, 0, 1, 1); }`,
+    `  40% { opacity: 1; animation-timing-function: linear; }`,
+    `  57% { opacity: 1; animation-timing-function: cubic-bezier(0, 0, 0.58, 1); }`,
+    `  100% { opacity: 0; }`,
+    `}`
+  ].join('\n');
   return [
     `:host, .cem-overlay { position: fixed; left: 0; top: 0; width: 100%; height: 100%;`,
     `  z-index: ${CONFIG.Z_INDEX}; background: ${bg}; pointer-events: none; }`,
     `.${CONFIG.CAT_LAYER_CLASS} { position: fixed; left: 0; top: 0; width: ${w}px; height: ${h}px;`,
-    `  pointer-events: ${CONFIG.POINTER_AUTO}; transform: translate(0px, 0px); }`,
-    frameCss
+    `  pointer-events: ${CONFIG.POINTER_AUTO}; transform: translate(0px, 0px);`,
+    `  cursor: grab; touch-action: none; -webkit-user-select: none; user-select: none;`,
+    `  opacity: 1; transition: opacity ${CONFIG.FADE_MS}ms ease; }`,
+    frameCss,
+    blinkCss
   ].join('\n');
 }
 
@@ -153,6 +174,14 @@ function renderInitialFrame(resourceLoader, canvasStage) {
       if (typeof canvasStage.setSpriteFrame === 'function') {
         canvasStage.setSpriteFrame(SectorId.CENTER);
       }
+      // 眨眼图层背景（复用同帧类布局，1 次请求，opacity 0 常驻待命）
+      if (typeof canvasStage.setBlinkBackground === 'function') {
+        canvasStage.setBlinkBackground(resourceLoader.getUrl(BLINK_SPRITE_PATH));
+      }
+      // 休息态闭眼图（rest 阶段眨眼叠加）
+      if (typeof canvasStage.setBlinkRestBackground === 'function') {
+        canvasStage.setBlinkRestBackground(resourceLoader.getUrl(BLINK_REST_PATH));
+      }
       log.info('sprite_initial_frame', {});
       return;
     }
@@ -201,7 +230,6 @@ function createOverlayContainer({
     canvasStage: null,
     poseMachine: null,
     drag: null,
-    clamp: DEFAULT_SETTINGS.clampToViewport,
     position: { x: 0, y: 0 },
     cleanups: [],
     prevViewport: { w: 0, h: 0 }
@@ -227,6 +255,21 @@ function createOverlayContainer({
   function setPointerEvents(policy) {
     if (!internals.catLayer) return;
     internals.catLayer.style.pointerEvents = policy === CONFIG.POINTER_AUTO ? CONFIG.POINTER_AUTO : CONFIG.POINTER_NONE;
+  }
+
+  /** 淡入：先置透明并强制 reflow，再恢复不透明以触发 CSS 过渡。 */
+  function fadeIn() {
+    if (!internals.catLayer) return;
+    internals.catLayer.style.opacity = '0';
+    void internals.catLayer.offsetWidth;
+    internals.catLayer.style.opacity = '1';
+  }
+
+  /** 淡出：置透明交由 CSS 过渡完成，同时立即停止指针交互。 */
+  function fadeOut() {
+    if (!internals.catLayer) return;
+    internals.catLayer.style.pointerEvents = CONFIG.POINTER_NONE;
+    internals.catLayer.style.opacity = '0';
   }
 
   function getHost() {
@@ -334,13 +377,13 @@ function createOverlayContainer({
     }
   }
 
-  function bindDrag(clampToViewport) {
+  function bindDrag() {
     if (!dragFactory) return;
     if (internals.drag && typeof internals.drag.unbind === 'function') {
       try { internals.drag.unbind(); } catch (_) { /* 重绑前解绑 */ }
     }
     try {
-      internals.drag = dragFactory({ storageService, clampToViewport });
+      internals.drag = dragFactory({ storageService });
       if (internals.drag && typeof internals.drag.onDragMove === 'function') {
         internals.drag.onDragMove((pos) => setPosition(pos));
       }
@@ -396,12 +439,12 @@ function createOverlayContainer({
       w: typeof window !== 'undefined' ? window.innerWidth : 0,
       h: typeof window !== 'undefined' ? window.innerHeight : 0
     };
-    internals.clamp = resolveClamp(storageService);
-    bindDrag(internals.clamp);
+    bindDrag();
     void preloadFrames(resourceLoader).then(() => {
       renderInitialFrame(resourceLoader, internals.canvasStage);
     });
     internals.state = STATE.MOUNTED;
+    fadeIn();
     void applyInitialPosition();
   }
 
@@ -413,11 +456,8 @@ function createOverlayContainer({
     return internals.poseMachine;
   }
 
-  function setClamp(clamp) {
-    internals.clamp = !!clamp;
-    if (internals.state !== STATE.MOUNTED) return;
-    bindDrag(internals.clamp);
-    log.info('clamp_updated', { clamp: internals.clamp });
+  function getDrag() {
+    return internals.drag;
   }
 
   return Object.freeze({
@@ -427,10 +467,12 @@ function createOverlayContainer({
     getPosition,
     getCatCenter,
     setPointerEvents,
+    fadeIn,
+    fadeOut,
     getHost,
     getCanvasStage,
     getPoseMachine,
-    setClamp
+    getDrag
   });
 }
 
@@ -497,11 +539,6 @@ async function readRememberedPosition(storageService) {
     log.warn('read_position_failed', { msg: e && e.message ? e.message : String(e) });
   }
   return null;
-}
-
-function resolveClamp(storageService) {
-  if (!storageService || typeof storageService.getSettings !== 'function') return DEFAULT_SETTINGS.clampToViewport;
-  return DEFAULT_SETTINGS.clampToViewport;
 }
 
 async function persistPosition(storageService, pos) {

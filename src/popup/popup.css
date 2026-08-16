@@ -92,29 +92,3 @@ body {
   opacity: 0.55;
   cursor: not-allowed;
 }
-
-.cem-switch {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 13px;
-  color: var(--cem-fg);
-  cursor: pointer;
-}
-
-.cem-switch input[type="checkbox"] {
-  width: 16px;
-  height: 16px;
-  accent-color: var(--cem-accent);
-  cursor: pointer;
-}
-
-.cem-switch__label {
-  user-select: none;
-}
-
-.cem-popup__tip {
-  margin: 0;
-  font-size: 12px;
-  color: var(--cem-muted);
-}

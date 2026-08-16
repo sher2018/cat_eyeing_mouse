@@ -11,13 +11,10 @@ const CONFIG = Object.freeze({
   POPUP_ICON: 'res/icons/icon48.png',
   I18N_ATTR: 'data-i18n-key',
   TOGGLE_BTN_ID: 'btn-toggle',
-  CLAMP_INPUT_ID: 'btn-clamp',
   I18N_KEYS: Object.freeze([
     'app_name',
     'action_show',
-    'action_hide',
-    'action_clamp_viewport',
-    'tip_drag_to_move'
+    'action_hide'
   ]),
   SHOW_KEY: 'action_show',
   HIDE_KEY: 'action_hide'
@@ -85,7 +82,6 @@ function applyIcon(documentRef, adapter) {
 /** 读取 storage 同步开关状态与显隐按钮文案。 */
 async function syncToggleState(adapter, documentRef, copy) {
   const settings = await readSettings(adapter);
-  applyClampState(documentRef, settings);
   applyToggleLabel(documentRef, settings, copy);
   return settings;
 }
@@ -100,13 +96,6 @@ async function readSettings(adapter) {
     log.warn('read_settings_failed', { msg: e && e.message ? e.message : String(e) });
     return DEFAULT_SETTINGS;
   }
-}
-
-function applyClampState(documentRef, settings) {
-  const clampInput = documentRef && documentRef.getElementById
-    ? documentRef.getElementById(CONFIG.CLAMP_INPUT_ID)
-    : null;
-  if (clampInput) clampInput.checked = !!settings.clampToViewport;
 }
 
 function applyToggleLabel(documentRef, settings, copy) {
@@ -132,24 +121,16 @@ async function sendToBackground(adapter, documentRef, message) {
   }
 }
 
-/** 绑定按钮事件：toggle→sendMessage + 外部回调；clamp 同理。 */
+/** 绑定按钮事件：toggle→sendMessage + 外部回调。 */
 function bindEvents(documentRef, deps) {
-  const { adapter, onToggleVisible, onClampChange, flipLocalHidden } = deps;
+  const { adapter, onToggleVisible, flipLocalHidden } = deps;
   const toggleBtn = documentRef.getElementById(CONFIG.TOGGLE_BTN_ID);
-  const clampInput = documentRef.getElementById(CONFIG.CLAMP_INPUT_ID);
 
   if (toggleBtn) {
     toggleBtn.addEventListener('click', () => {
       if (typeof flipLocalHidden === 'function') flipLocalHidden();
       fireCallback(onToggleVisible);
       void sendToBackground(adapter, documentRef, { type: MSG_TYPES.TOGGLE_VISIBLE });
-    });
-  }
-  if (clampInput) {
-    clampInput.addEventListener('change', () => {
-      const checked = !!clampInput.checked;
-      fireCallback(onClampChange, checked);
-      void sendToBackground(adapter, documentRef, { type: MSG_TYPES.SET_CLAMP, clamp: checked });
     });
   }
 }
@@ -163,10 +144,10 @@ function fireCallback(cb, payload) {
 
 /**
  * 创建 PopupView 实例。
- * @param {{i18nService?:object, adapter?:object, onToggleVisible?:Function, onClampChange?:Function}} [deps]
+ * @param {{i18nService?:object, adapter?:object, onToggleVisible?:Function}} [deps]
  * @returns {object} 冻结的 PopupView 接口
  */
-function createPopupView({ i18nService, adapter, onToggleVisible, onClampChange } = {}) {
+function createPopupView({ i18nService, adapter, onToggleVisible } = {}) {
   let initialized = false;
   let localHidden = DEFAULT_SETTINGS.hidden;
   let lastCopy = {};
@@ -185,7 +166,7 @@ function createPopupView({ i18nService, adapter, onToggleVisible, onClampChange 
     applyIcon(document, adapter);
     const settings = await syncToggleState(adapter, document, lastCopy);
     localHidden = !!settings.hidden;
-    bindEvents(document, { adapter, onToggleVisible, onClampChange, flipLocalHidden });
+    bindEvents(document, { adapter, onToggleVisible, flipLocalHidden });
     initialized = true;
   }
 

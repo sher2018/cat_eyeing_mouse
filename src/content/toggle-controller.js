@@ -3,6 +3,7 @@
 // 上游：M-14 PopupView、M-15 ServiceWorker 消息驱动；下游：M-02 StorageService、M-13 OverlayContainer。
 
 import { createLogger } from '../shared/logger.js';
+import { OVERLAY_FADE_MS } from '../shared/constants.js';
 
 const log = createLogger('ToggleController');
 
@@ -30,16 +31,6 @@ function emitVisibility(listeners, visible) {
   }
 }
 
-/** 异步持久化 hidden 标记，失败仅记 WARN（不阻塞状态切换）。 */
-async function persistHidden(storageService, hidden) {
-  if (!storageService || typeof storageService.setSettings !== 'function') return;
-  try {
-    await storageService.setSettings({ hidden });
-  } catch (e) {
-    log.warn('persist_failed', { msg: e && e.message ? e.message : String(e) });
-  }
-}
-
 /** 卸载注入层；抛错时记 UNMOUNT_FAIL 并尽力强制移除节点。 */
 function safeUnmount(overlayContainer) {
   if (!overlayContainer || typeof overlayContainer.unmount !== 'function') return;
@@ -63,36 +54,39 @@ function forceRemoveHost(overlayContainer) {
   }
 }
 
-/** 异步同步初始可见性：以 storage 记忆为准。 */
-async function syncFromStorage(storageService, stateRef) {
-  if (!storageService || typeof storageService.getSettings !== 'function') return;
-  try {
-    const result = await storageService.getSettings();
-    if (result && result.ok && result.value && typeof result.value.hidden === 'boolean') {
-      stateRef.current = result.value.hidden ? STATE.HIDDEN : STATE.VISIBLE;
-      log.info('synced_from_storage', { visible: !result.value.hidden });
-    }
-  } catch (e) {
-    log.warn('sync_failed', { msg: e && e.message ? e.message : String(e) });
-  }
-}
-
 /**
- * 创建 ToggleController 实例。
- * @param {{overlayContainer?:object, storageService?:object, initialVisible?:boolean}} [deps]
+ * 创建 ToggleController 实例（纯内存状态机：hidden 的持久化由 ServiceWorker 唯一负责，
+ * 本控制器仅镜像广播态，避免读-改-写竞态导致的新旧值互覆）。
+ * @param {{overlayContainer?:object, initialVisible?:boolean}} [deps]
  * @returns {object} 冻结的控制器接口
  */
-function createToggleController({ overlayContainer, storageService, initialVisible = CONFIG.DEFAULT_VISIBLE } = {}) {
+function createToggleController({ overlayContainer, initialVisible = CONFIG.DEFAULT_VISIBLE } = {}) {
   const stateRef = { current: initialVisible ? STATE.VISIBLE : STATE.HIDDEN };
   const listeners = new Set();
 
   function hide() {
     if (stateRef.current === STATE.HIDDEN) return;
-    safeUnmount(overlayContainer);
-    void persistHidden(storageService, true);
     stateRef.current = STATE.HIDDEN;
     log.info('visibility_change', { visible: false });
+    scheduleHideUnmount();
     emitVisibility(listeners, false);
+  }
+
+  /** 隐藏编排：容器支持淡出时先播过渡再延迟卸载；否则立即卸载。 */
+  function scheduleHideUnmount() {
+    if (overlayContainer && typeof overlayContainer.fadeOut === 'function') {
+      try {
+        overlayContainer.fadeOut();
+        // 淡出期间若已 show 恢复可见，则放弃挂起的卸载（避免误卸新挂载的容器）
+        setTimeout(() => {
+          if (stateRef.current === STATE.HIDDEN) safeUnmount(overlayContainer);
+        }, OVERLAY_FADE_MS);
+        return;
+      } catch (e) {
+        log.warn(ERROR_CODES.UNMOUNT_FAIL, { msg: e && e.message ? e.message : String(e) });
+      }
+    }
+    safeUnmount(overlayContainer);
   }
 
   function show() {
@@ -104,7 +98,6 @@ function createToggleController({ overlayContainer, storageService, initialVisib
         log.warn('mount_fail', { msg: e && e.message ? e.message : String(e) });
       }
     }
-    void persistHidden(storageService, false);
     stateRef.current = STATE.VISIBLE;
     log.info('visibility_change', { visible: true });
     emitVisibility(listeners, true);
@@ -127,9 +120,6 @@ function createToggleController({ overlayContainer, storageService, initialVisib
     listeners.add(cb);
     return () => listeners.delete(cb);
   }
-
-  // 启动即尝试从 storage 同步初始可见性（异步、不阻塞构造）
-  void syncFromStorage(storageService, stateRef);
 
   return Object.freeze({
     show,

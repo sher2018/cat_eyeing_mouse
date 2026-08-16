@@ -19,10 +19,6 @@
     "message": "Clamp to viewport",
     "description": "Label for the toggle that keeps the cat inside the viewport."
   },
-  "tip_drag_to_move": {
-    "message": "Drag to move",
-    "description": "Hint telling the user they can drag the cat."
-  },
   "status_resting": {
     "message": "Resting",
     "description": "Status text shown when the cat enters its idle resting pose."

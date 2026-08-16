@@ -87,7 +87,8 @@ function runtime() {
   const rt = ns.runtime;
   return Object.freeze({
     getURL: (relPath) => rt.getURL(relPath),
-    sendMessage: (msg) => promisify((m, cb) => rt.sendMessage(undefined, m, cb))(msg),
+    // Chrome/Edge 对非字符串首参做可选参数位移：显式传 undefined 会被绑定为 message，导致载荷丢失。
+    sendMessage: (msg) => promisify((m, cb) => rt.sendMessage(m, cb))(msg),
     onMessage: (cb) => {
       const listener = (message, sender, sendResponse) => cb(message, sender, sendResponse);
       rt.onMessage.addListener(listener);

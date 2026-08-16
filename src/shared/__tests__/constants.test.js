@@ -16,8 +16,8 @@ describe('constants', () => {
     expect(MOVE_FRAMES[SectorId.N]).toBe('res/move/8.png');
   });
 
-  it('IDLE_THRESHOLD_MS = 8000（FR-008）', () => {
-    expect(IDLE_THRESHOLD_MS).toBe(8000);
+  it('IDLE_THRESHOLD_MS = 10000（FR-008 默认 10s）', () => {
+    expect(IDLE_THRESHOLD_MS).toBe(10000);
   });
 
   it('SECTOR_BANDS 覆盖 8 扇区', () => {
